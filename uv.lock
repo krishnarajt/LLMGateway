@@ -837,7 +837,7 @@ wheels = [
 ]
 
 [[package]]
-name = "scron"
+name = "llmgateway"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [

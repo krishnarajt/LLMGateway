@@ -1,12 +1,12 @@
 services:
-  scron:
+  llmgateway:
     build: .
-    container_name: scron
+    container_name: llmgateway
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://second_thought:second_thought@postgres:5432/second_thought
-      - DB_SCHEMA=${DB_SCHEMA:-scron}
+      - DB_SCHEMA=${DB_SCHEMA:-llmgateway}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env or environment}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_DIR=/app/logs
@@ -19,11 +19,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
     networks:
-      - scron-network
+      - llmgateway-network
 
   postgres:
     image: postgres:15-alpine
-    container_name: scron-postgres
+    container_name: llmgateway-postgres
     environment:
       - POSTGRES_USER=second_thought
       - POSTGRES_PASSWORD=second_thought
@@ -39,21 +39,21 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - scron-network
+      - llmgateway-network
 
   # loki:
   #   image: grafana/loki:2.9.0
-  #   container_name: scron-loki
+  #   container_name: llmgateway-loki
   #   ports:
   #     - "3100:3100"
   #   command: -config.file=/etc/loki/local-config.yaml
   #   restart: unless-stopped
   #   networks:
-  #     - scron-network
+  #     - llmgateway-network
 
   # promtail:
   #   image: grafana/promtail:2.9.0
-  #   container_name: scron-promtail
+  #   container_name: llmgateway-promtail
   #   volumes:
   #     - app_logs:/app/logs:ro
   #     - ./promtail-config.yaml:/etc/promtail/config.yaml:ro
@@ -62,11 +62,11 @@ services:
   #     - loki
   #   restart: unless-stopped
   #   networks:
-  #     - scron-network
+  #     - llmgateway-network
 
   # grafana:
   #   image: grafana/grafana:latest
-  #   container_name: scron-grafana
+  #   container_name: llmgateway-grafana
   #   ports:
   #     - "3000:3000"
   #   environment:
@@ -77,7 +77,7 @@ services:
   #     - loki
   #   restart: unless-stopped
   #   networks:
-  #     - scron-network
+  #     - llmgateway-network
 
 volumes:
   postgres_data:
@@ -85,5 +85,5 @@ volumes:
   # grafana_data:
 
 networks:
-  scron-network:
+  llmgateway-network:
     driver: bridge

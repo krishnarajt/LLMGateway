@@ -217,10 +217,10 @@ def _bootstrap_root_logger() -> None:
 
 
 def _log_startup_banner(log_file_path: str) -> None:
-    log = logging.getLogger("Scron")
+    log = logging.getLogger("llmgateway")
     environment = os.environ.get("ENVIRONMENT", "unknown")
     log.info("=" * 80)
-    log.info("🚀 Logging initialized for: scron")
+    log.info("🚀 Logging initialized for: llmgateway")
     log.info(f"   Environment : {environment}")
     log.info(f"   Process ID  : {os.getpid()}")
     log.info(f"   Log file    : {os.path.abspath(log_file_path)}")

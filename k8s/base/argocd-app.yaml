@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: scron
+  name: llmgateway
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: https://github.com/krishnarajt/scron
+    repoURL: https://github.com/krishnarajt/llmgateway
     targetRevision: main
     path: k8s/overlays/prod
   destination:
     server: https://kubernetes.default.svc
-    namespace: scron
+    namespace: llmgateway
   syncPolicy:
     automated:
       prune: true

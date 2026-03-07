@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
     try:
         # Startup
         logger.info("=" * 60)
-        logger.info("Starting scron Backend...")
+        logger.info("Starting llmgateway Backend...")
         logger.info("=" * 60)
 
         # Initialize database
@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
             raise
 
         logger.info("=" * 60)
-        logger.info("scron backend is ready!")
+        logger.info("llmgateway backend is ready!")
         logger.info("=" * 60)
 
         yield
@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown
         logger.info("=" * 60)
-        logger.info("Shutting down scron Backend...")
+        logger.info("Shutting down llmgateway Backend...")
         logger.info("=" * 60)
 
         if notification_task:
@@ -95,13 +95,13 @@ async def lifespan(app: FastAPI):
                 logger.error(f"✗ Error stopping notification scheduler: {e}")
 
         logger.info("=" * 60)
-        logger.info("scron Backend shutdown complete")
+        logger.info("llmgateway Backend shutdown complete")
         logger.info("=" * 60)
 
 
 # Create FastAPI app
 app = FastAPI(
-    title="scron Backend",
+    title="llmgateway Backend",
     description="Backend API for managing scheduled cron jobs",
     version="1.0.0",
     lifespan=lifespan,
@@ -128,8 +128,8 @@ logger.info("API routers registered")
 def root():
     """Root endpoint"""
     return {
-        "name": "scron Backend",
-        "description": "scron Backend API",
+        "name": "llmgateway Backend",
+        "description": "llmgateway Backend API",
         "version": "1.0.0",
         "status": "running",
         "timestamp": datetime.utcnow().isoformat(),

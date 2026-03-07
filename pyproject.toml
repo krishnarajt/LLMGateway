@@ -1,7 +1,7 @@
 [project]
-name = "scron"
+name = "llmgateway"
 version = "1.0.0"
-description = "scron backend - Simpler and more Convenient Cron Scheduler"
+description = "llmgateway backend - Simpler and more Convenient Cron Scheduler"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **Run the test suite** | `pytest` | Tests are defined in the `tests/` directory (if present). |
 | **Run a single test file** | `pytest tests/path/to/test_file.py` | Replace the path with the desired test file. |
 | **Run a single test case** | `pytest tests/path/to/test_file.py::TestClass::test_method` | Use the fully‑qualified test identifier. |
-| **Build a Docker image** | `docker build -t scron:latest .` | Dockerfile is in the repository root. |
+| **Build a Docker image** | `docker build -t llmgateway:latest .` | Dockerfile is in the repository root. |
 | **Start services with Docker Compose** | `docker compose up` | Brings up the FastAPI service and the PostgreSQL container defined in `docker-compose.yml`. |
 | **Run lint / format (if installed)** | `ruff check .` or `black .` | Not part of the default dependencies, but you can add your preferred linter/formatter. |
 | **Initialize the database** | `python -c "from app.db.database import init_db; init_db()"` | Creates tables using SQLAlchemy models. |
@@ -23,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## High‑Level Architecture Overview
 
 ```
-└─ scron/                     # Repository root
+└─ llmgateway/                     # Repository root
    ├─ app/                    # Application package
    │   ├─ __init__.py
    │   ├─ main.py             # FastAPI app bootstrapping, logging, CORS

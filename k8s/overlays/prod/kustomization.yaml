@@ -1,4 +1,4 @@
 resources:
   - ../../base
 
-namespace: scron
+namespace: llmgateway
