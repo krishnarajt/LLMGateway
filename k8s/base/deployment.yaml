@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scron
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scron
+  template:
+    metadata:
+      labels:
+        app: scron
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/krishnarajt/scron:git-c99898538ba928ed5c5fdb54fd35df83cad6ab58
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+
+          envFrom:
+            - secretRef:
+                name: scron-env
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

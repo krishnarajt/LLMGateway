@@ -1,0 +1,61 @@
+services:
+  scron:
+    build:
+      context: .
+      target: dev
+    volumes:
+      - .:/app
+      - /app/.venv        # ← this shadows .venv, keeps it inside the container only
+      - app_logs:/app/logs
+    environment:
+      - RELOAD=true
+      - LOG_LEVEL=DEBUG
+      - LOG_DIR=/app/logs
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-not-for-production}
+      - DB_SCHEMA=${DB_SCHEMA:-scron}
+    ports:
+      - "8000:8000"
+    develop:
+      watch:
+        - action: sync
+          path: ./app
+          target: /app/src
+        - action: rebuild
+          path: ./requirements.txt
+        - action: rebuild
+          path: ./Dockerfile
+
+  # loki:
+  #   image: grafana/loki:2.9.0
+  #   container_name: scron-loki-dev
+  #   ports:
+  #     - "3100:3100"
+  #   command: -config.file=/etc/loki/local-config.yaml
+  #   networks:
+  #     - default
+
+  # promtail:
+  #   image: grafana/promtail:2.9.0
+  #   container_name: scron-promtail-dev
+  #   volumes:
+  #     - app_logs:/app/logs:ro
+  #     - ./promtail-config.yaml:/etc/promtail/config.yaml:ro
+  #   command: -config.file=/etc/promtail/config.yaml
+  #   depends_on:
+  #     - loki
+
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: scron-grafana-dev
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #   depends_on:
+  #     - loki
+
+volumes:
+  app_logs:
+  # grafana_data:

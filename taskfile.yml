@@ -1,0 +1,28 @@
+version: 3
+
+tasks:
+  setup:
+    desc: First time project setup
+    cmds:
+      - uv sync
+      - uv run pre-commit install
+
+  dev:
+    desc: Start in development mode
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.dev.yml up --watch
+  prod:
+    desc: Start in production mode
+    cmds:
+      - docker compose up
+
+  down:
+    desc: Stop all containers
+    cmds:
+      - docker compose down
+
+  lint:
+    desc: Run ruff check and format
+    cmds:
+      - ruff check --fix .
+      - ruff format .

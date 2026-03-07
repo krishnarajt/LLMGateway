@@ -1,0 +1,30 @@
+[project]
+name = "scron"
+version = "1.0.0"
+description = "scron backend - Simpler and more Convenient Cron Scheduler"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "sqlalchemy>=2.0.25",
+    "psycopg2-binary>=2.9.9",
+    "pydantic>=2.5.3",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "PyJWT>=2.8.0",
+    "httpx>=0.26.0",
+    "pytz>=2024.1",
+    "python-multipart>=0.0.6",
+    "alembic>=1.13.1",
+    "pre-commit>=4.5.1",
+    "python-json-logger>=4.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pre-commit",
+    "pytest>=9.0.2",
+    "ruff",
+]

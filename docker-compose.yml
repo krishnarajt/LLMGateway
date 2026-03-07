@@ -1,0 +1,89 @@
+services:
+  scron:
+    build: .
+    container_name: scron
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://second_thought:second_thought@postgres:5432/second_thought
+      - DB_SCHEMA=${DB_SCHEMA:-scron}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env or environment}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_DIR=/app/logs
+      - RELOAD=false
+    volumes:
+      - app_logs:/app/logs
+      - /app/.venv        # ← this shadows .venv, keeps it inside the container only
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - scron-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: scron-postgres
+    environment:
+      - POSTGRES_USER=second_thought
+      - POSTGRES_PASSWORD=second_thought
+      - POSTGRES_DB=second_thought
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U second_thought -d second_thought"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - scron-network
+
+  # loki:
+  #   image: grafana/loki:2.9.0
+  #   container_name: scron-loki
+  #   ports:
+  #     - "3100:3100"
+  #   command: -config.file=/etc/loki/local-config.yaml
+  #   restart: unless-stopped
+  #   networks:
+  #     - scron-network
+
+  # promtail:
+  #   image: grafana/promtail:2.9.0
+  #   container_name: scron-promtail
+  #   volumes:
+  #     - app_logs:/app/logs:ro
+  #     - ./promtail-config.yaml:/etc/promtail/config.yaml:ro
+  #   command: -config.file=/etc/promtail/config.yaml
+  #   depends_on:
+  #     - loki
+  #   restart: unless-stopped
+  #   networks:
+  #     - scron-network
+
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: scron-grafana
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #   depends_on:
+  #     - loki
+  #   restart: unless-stopped
+  #   networks:
+  #     - scron-network
+
+volumes:
+  postgres_data:
+  # app_logs:
+  # grafana_data:
+
+networks:
+  scron-network:
+    driver: bridge
