@@ -1,7 +1,7 @@
 [project]
 name = "llmgateway"
 version = "1.0.0"
-description = "llmgateway backend - Simpler and more Convenient Cron Scheduler"
+description = "LLM Gateway — Personal unified API for multiple LLM providers"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -17,8 +17,9 @@ dependencies = [
     "pytz>=2024.1",
     "python-multipart>=0.0.6",
     "alembic>=1.13.1",
-    "pre-commit>=4.5.1",
     "python-json-logger>=4.0.0",
+    "python-dotenv>=1.0.0",
+    "cryptography>=42.0.0",
 ]
 
 [dependency-groups]

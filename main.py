@@ -13,6 +13,9 @@ from app.common import constants
 from sqlalchemy import text
 from app.db.database import get_db, init_db
 from app.api.auth_routes import router as auth_router
+from app.api.admin_routes import router as admin_router
+from app.api.user_routes import router as user_router
+from app.api.chat_routes import router as chat_router
 from sqlalchemy.orm import Session
 
 
@@ -60,10 +63,10 @@ async def lifespan(app: FastAPI):
     try:
         # Startup
         logger.info("=" * 60)
-        logger.info("Starting llmgateway Backend...")
+        logger.info("Starting LLM Gateway Backend...")
         logger.info("=" * 60)
 
-        # Initialize database
+        # Initialize database (creates tables + seeds default admin & providers)
         try:
             init_db()
             logger.info("✓ Database initialized successfully")
@@ -72,7 +75,7 @@ async def lifespan(app: FastAPI):
             raise
 
         logger.info("=" * 60)
-        logger.info("llmgateway backend is ready!")
+        logger.info("LLM Gateway backend is ready!")
         logger.info("=" * 60)
 
         yield
@@ -80,7 +83,7 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown
         logger.info("=" * 60)
-        logger.info("Shutting down llmgateway Backend...")
+        logger.info("Shutting down LLM Gateway Backend...")
         logger.info("=" * 60)
 
         if notification_task:
@@ -95,14 +98,14 @@ async def lifespan(app: FastAPI):
                 logger.error(f"✗ Error stopping notification scheduler: {e}")
 
         logger.info("=" * 60)
-        logger.info("llmgateway Backend shutdown complete")
+        logger.info("LLM Gateway Backend shutdown complete")
         logger.info("=" * 60)
 
 
 # Create FastAPI app
 app = FastAPI(
-    title="llmgateway Backend",
-    description="Backend API for managing scheduled cron jobs",
+    title="LLM Gateway",
+    description="Personal LLM Gateway — unified API for multiple LLM providers",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -120,16 +123,19 @@ logger.info(f"CORS enabled for origins: {cors_origins}")
 
 # Include routers
 app.include_router(auth_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
+app.include_router(user_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
 
-logger.info("API routers registered")
+logger.info("API routers registered: auth, admin, user, chat")
 
 
 @app.get("/")
 def root():
     """Root endpoint"""
     return {
-        "name": "llmgateway Backend",
-        "description": "llmgateway Backend API",
+        "name": "LLM Gateway",
+        "description": "Personal LLM Gateway — unified API for multiple LLM providers",
         "version": "1.0.0",
         "status": "running",
         "timestamp": datetime.utcnow().isoformat(),

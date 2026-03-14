@@ -1,3 +1,8 @@
+"""
+Authentication service — password hashing, JWT creation/verification, refresh tokens.
+Extended with role awareness and the default-admin lifecycle.
+"""
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import uuid
@@ -6,7 +11,7 @@ import hashlib
 import secrets
 from sqlalchemy.orm import Session
 
-from app.db.models import User, RefreshToken
+from app.db.models import User, RefreshToken, UserRole
 from app.utils.logging_utils import get_logger
 
 # bring in configuration constants
@@ -30,6 +35,10 @@ def _now() -> datetime:
     """Return current UTC time (timezone-aware)"""
     return datetime.now(timezone.utc)
 
+
+# ---------------------------------------------------------------------------
+# Password hashing
+# ---------------------------------------------------------------------------
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a stored hash"""
@@ -64,10 +73,14 @@ def get_password_hash(password: str) -> str:
     return f"{HASH_ITERATIONS}${salt.hex()}${password_hash}"
 
 
-def create_access_token(user_id: int, expires_delta: Optional[timedelta] = None) -> str:
-    """Create a short-lived JWT access token"""
+# ---------------------------------------------------------------------------
+# JWT tokens
+# ---------------------------------------------------------------------------
+
+def create_access_token(user_id: int, role: str = "user", expires_delta: Optional[timedelta] = None) -> str:
+    """Create a short-lived JWT access token, including the user's role."""
     expire = _now() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode = {"sub": str(user_id), "exp": expire, "type": "access"}
+    to_encode = {"sub": str(user_id), "exp": expire, "type": "access", "role": role}
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -75,7 +88,6 @@ def create_refresh_token(db: Session, user_id: int) -> str:
     """
     Create a long-lived refresh token.
     Only the jti (unique ID) is stored in the DB — not the full JWT.
-    This keeps the DB row small and makes revocation O(1).
     """
     jti = str(uuid.uuid4())
     expires_at = _now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
@@ -95,22 +107,23 @@ def create_refresh_token(db: Session, user_id: int) -> str:
     return token
 
 
-def verify_access_token(token: str) -> Optional[int]:
-    """Verify an access token and return the user_id, or None if invalid"""
+def verify_access_token(token: str) -> Optional[dict]:
+    """
+    Verify an access token and return the payload dict (with 'sub' and 'role'),
+    or None if invalid.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "access":
             return None
-        return int(payload["sub"])
+        return {"user_id": int(payload["sub"]), "role": payload.get("role", "user")}
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, KeyError, ValueError):
         return None
 
 
 def verify_refresh_token(db: Session, token: str) -> Optional[int]:
     """
-    Verify a refresh token by:
-    1. Checking the JWT signature + expiry
-    2. Confirming the jti exists in the DB (not revoked)
+    Verify a refresh token.
     Returns user_id if valid, None otherwise.
     """
     try:
@@ -145,7 +158,6 @@ def rotate_refresh_token(db: Session, old_token: str) -> Optional[tuple[int, str
     """
     Verify the old refresh token, revoke it, and issue a new one.
     Returns (user_id, new_token) or None if the old token is invalid.
-    This should be used in the /refresh endpoint instead of verify alone.
     """
     user_id = verify_refresh_token(db, old_token)
     if not user_id:
@@ -184,6 +196,10 @@ def revoke_all_user_tokens(db: Session, user_id: int) -> None:
     db.commit()
 
 
+# ---------------------------------------------------------------------------
+# User CRUD
+# ---------------------------------------------------------------------------
+
 def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
     """Verify username + password, return User or None"""
     user = db.query(User).filter(User.username == username).first()
@@ -194,10 +210,16 @@ def authenticate_user(db: Session, username: str, password: str) -> Optional[Use
     return user
 
 
-def create_user(db: Session, username: str, password: str) -> User:
+def create_user(db: Session, username: str, password: str, role: str = "user",
+                display_name: str = "") -> User:
     """Create a new user with a hashed password"""
     hashed_password = get_password_hash(password)
-    db_user = User(username=username, password_hash=hashed_password)
+    db_user = User(
+        username=username,
+        password_hash=hashed_password,
+        role=UserRole(role),
+        display_name=display_name,
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -206,3 +228,31 @@ def create_user(db: Session, username: str, password: str) -> User:
 
 def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
     return db.query(User).filter(User.id == user_id).first()
+
+
+def change_password(db: Session, user: User, new_password: str) -> User:
+    """Change a user's password and clear the must_change_password flag."""
+    user.password_hash = get_password_hash(new_password)
+    user.must_change_password = False
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def maybe_delete_default_admin(db: Session, new_admin_id: int) -> bool:
+    """
+    If there is a default admin AND a different real admin exists, delete the default admin.
+    Called after a new admin user is created or after their first successful login.
+    Returns True if a default admin was deleted.
+    """
+    default_admin = (
+        db.query(User)
+        .filter(User.is_default_admin == True, User.id != new_admin_id)
+        .first()
+    )
+    if default_admin:
+        logger.info(f"Deleting default admin user (id={default_admin.id}) since a real admin exists")
+        db.delete(default_admin)
+        db.commit()
+        return True
+    return False

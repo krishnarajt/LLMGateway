@@ -1,130 +1,102 @@
-from types import SimpleNamespace
+"""Tests for authentication routes."""
 
 import pytest
-
-from app.api import auth_routes
-
-
-def test_signup_success(client, monkeypatch):
-    monkeypatch.setattr(
-        auth_routes, "create_user", lambda db, username, password: SimpleNamespace(id=1)
-    )
-    monkeypatch.setattr(auth_routes, "create_access_token", lambda user_id: "access-1")
-    monkeypatch.setattr(
-        auth_routes, "create_refresh_token", lambda db, user_id: "refresh-1"
-    )
-
-    response = client.post(
-        "/api/auth/signup", json={"username": "alice", "password": "password123"}
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "accessToken": "access-1",
-        "refreshToken": "refresh-1",
-        "message": "Account created successfully",
-    }
+from app.db.models import User, UserRole
+from app.services.auth_service import get_password_hash
 
 
-def test_signup_duplicate_username_returns_400(client, fake_db):
-    fake_db.existing_user = SimpleNamespace(id=99, username="alice")
+class TestLogin:
+    def test_login_success(self, client, admin_user):
+        resp = client.post("/api/auth/login", json={"username": "testadmin", "password": "adminpass"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "accessToken" in data
+        assert "refreshToken" in data
+        assert data["role"] == "admin"
 
-    response = client.post(
-        "/api/auth/signup", json={"username": "alice", "password": "password123"}
-    )
+    def test_login_invalid_password(self, client, admin_user):
+        resp = client.post("/api/auth/login", json={"username": "testadmin", "password": "wrong"})
+        assert resp.status_code == 401
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Username already exists"
+    def test_login_nonexistent_user(self, client):
+        resp = client.post("/api/auth/login", json={"username": "ghost", "password": "pass"})
+        assert resp.status_code == 401
 
+    def test_login_default_admin_warning(self, client, db):
+        """When logging in as the default admin, the response should contain a warning."""
+        user = User(
+            username="admin",
+            password_hash=get_password_hash("admin"),
+            role=UserRole.admin,
+            is_default_admin=True,
+            must_change_password=True,
+        )
+        db.add(user)
+        db.commit()
 
-def test_login_success(client, monkeypatch):
-    monkeypatch.setattr(
-        auth_routes,
-        "authenticate_user",
-        lambda db, username, password: SimpleNamespace(id=7),
-    )
-    monkeypatch.setattr(auth_routes, "create_access_token", lambda user_id: "access-7")
-    monkeypatch.setattr(
-        auth_routes, "create_refresh_token", lambda db, user_id: "refresh-7"
-    )
-
-    response = client.post(
-        "/api/auth/login", json={"username": "alice", "password": "password123"}
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "accessToken": "access-7",
-        "refreshToken": "refresh-7",
-        "message": "Login successful",
-    }
-
-
-def test_login_invalid_credentials_returns_401(client, monkeypatch):
-    monkeypatch.setattr(
-        auth_routes, "authenticate_user", lambda db, username, password: None
-    )
-
-    response = client.post(
-        "/api/auth/login", json={"username": "alice", "password": "wrong"}
-    )
-
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid username or password"
+        resp = client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["is_default_admin"] is True
+        assert data["must_change_password"] is True
+        assert "default admin" in data["message"].lower()
 
 
-def test_refresh_success(client, monkeypatch):
-    monkeypatch.setattr(
-        auth_routes,
-        "rotate_refresh_token",
-        lambda db, token: (42, "refresh-new-42"),
-    )
-    monkeypatch.setattr(auth_routes, "create_access_token", lambda user_id: "access-42")
+class TestRefreshAndLogout:
+    def test_refresh_token(self, client, admin_user):
+        # Login first
+        login_resp = client.post("/api/auth/login", json={"username": "testadmin", "password": "adminpass"})
+        refresh_token = login_resp.json()["refreshToken"]
 
-    response = client.post("/api/auth/refresh", json={"refreshToken": "refresh-old-42"})
+        # Refresh
+        resp = client.post("/api/auth/refresh", json={"refreshToken": refresh_token})
+        assert resp.status_code == 200
+        assert "accessToken" in resp.json()
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "accessToken": "access-42",
-        "refreshToken": "refresh-new-42",
-        "message": "Token refreshed",
-    }
+    def test_refresh_invalid_token(self, client):
+        resp = client.post("/api/auth/refresh", json={"refreshToken": "invalid-token"})
+        assert resp.status_code == 401
 
+    def test_logout(self, client, admin_user):
+        login_resp = client.post("/api/auth/login", json={"username": "testadmin", "password": "adminpass"})
+        refresh_token = login_resp.json()["refreshToken"]
 
-def test_refresh_invalid_token_returns_401(client, monkeypatch):
-    monkeypatch.setattr(auth_routes, "rotate_refresh_token", lambda db, token: None)
-
-    response = client.post("/api/auth/refresh", json={"refreshToken": "bad-token"})
-
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid or expired refresh token"
+        resp = client.post("/api/auth/logout", json={"refreshToken": refresh_token})
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
 
 
-def test_logout_success(client, monkeypatch):
-    called = {"count": 0}
+class TestChangePassword:
+    def test_change_password(self, client, admin_user, admin_headers):
+        resp = client.post(
+            "/api/auth/change-password",
+            json={"current_password": "adminpass", "new_password": "newpass123"},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
 
-    def _revoke(db, token):
-        called["count"] += 1
-        return True
+        # Login with new password
+        resp = client.post("/api/auth/login", json={"username": "testadmin", "password": "newpass123"})
+        assert resp.status_code == 200
 
-    monkeypatch.setattr(auth_routes, "revoke_refresh_token", _revoke)
+    def test_change_password_wrong_current(self, client, admin_user, admin_headers):
+        resp = client.post(
+            "/api/auth/change-password",
+            json={"current_password": "wrongpass", "new_password": "newpass123"},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 400
 
-    response = client.post("/api/auth/logout", json={"refreshToken": "refresh-1"})
 
-    assert response.status_code == 200
-    assert response.json() == {"success": True, "message": "Logged out successfully"}
-    assert called["count"] == 1
+class TestMe:
+    def test_me_endpoint(self, client, admin_user, admin_headers):
+        resp = client.get("/api/auth/me", headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["username"] == "testadmin"
+        assert data["role"] == "admin"
 
-
-@pytest.mark.parametrize(
-    "path,payload",
-    [
-        ("/api/auth/signup", {"username": "alice"}),
-        ("/api/auth/login", {"username": "alice"}),
-        ("/api/auth/refresh", {}),
-        ("/api/auth/logout", {}),
-    ],
-)
-def test_auth_routes_validation_errors(client, path, payload):
-    response = client.post(path, json=payload)
-    assert response.status_code == 422
+    def test_me_unauthorized(self, client):
+        resp = client.get("/api/auth/me", headers={"Authorization": "Bearer invalid"})
+        assert resp.status_code == 401
