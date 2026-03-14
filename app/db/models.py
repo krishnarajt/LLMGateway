@@ -36,6 +36,7 @@ from app.db.database import Base
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class UserRole(str, enum.Enum):
     admin = "admin"
     user = "user"
@@ -51,6 +52,7 @@ class PermissionRequestStatus(str, enum.Enum):
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def generate_uuid():
     return str(uuid.uuid4())
 
@@ -58,6 +60,7 @@ def generate_uuid():
 # ---------------------------------------------------------------------------
 # Users & Auth
 # ---------------------------------------------------------------------------
+
 
 class User(Base):
     """User model - stores user info, authentication, and role."""
@@ -83,7 +86,9 @@ class User(Base):
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     refresh_tokens = relationship(
@@ -93,7 +98,9 @@ class User(Base):
         "GatewayApiKey", back_populates="user", cascade="all, delete-orphan"
     )
     permission_requests = relationship(
-        "PermissionRequest", back_populates="user", cascade="all, delete-orphan",
+        "PermissionRequest",
+        back_populates="user",
+        cascade="all, delete-orphan",
         foreign_keys="PermissionRequest.user_id",
     )
 
@@ -119,6 +126,7 @@ class RefreshToken(Base):
 # LLM Providers
 # ---------------------------------------------------------------------------
 
+
 class Provider(Base):
     """
     An LLM provider (e.g. OpenAI, Google Gemini, Ollama).
@@ -129,7 +137,7 @@ class Provider(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False)  # e.g. "openai"
-    display_name = Column(String(100), nullable=False)        # e.g. "OpenAI"
+    display_name = Column(String(100), nullable=False)  # e.g. "OpenAI"
     # Base URL for API calls (e.g. "https://api.openai.com/v1" or "http://localhost:11434")
     base_url = Column(String(500), nullable=True)
     # Provider type used by the code to pick the right adapter
@@ -137,11 +145,17 @@ class Provider(Base):
     is_active = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
-    api_keys = relationship("ProviderApiKey", back_populates="provider", cascade="all, delete-orphan")
-    models = relationship("LLMModel", back_populates="provider", cascade="all, delete-orphan")
+    api_keys = relationship(
+        "ProviderApiKey", back_populates="provider", cascade="all, delete-orphan"
+    )
+    models = relationship(
+        "LLMModel", back_populates="provider", cascade="all, delete-orphan"
+    )
 
 
 class ProviderApiKey(Base):
@@ -153,7 +167,9 @@ class ProviderApiKey(Base):
     __tablename__ = "provider_api_keys"
 
     id = Column(Integer, primary_key=True, index=True)
-    provider_id = Column(Integer, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False)
+    provider_id = Column(
+        Integer, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False
+    )
     # A human-readable label for the key (e.g. "prod-key-1", "backup")
     label = Column(String(100), default="default")
     # The encrypted API key value
@@ -161,7 +177,9 @@ class ProviderApiKey(Base):
     is_active = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     provider = relationship("Provider", back_populates="api_keys")
@@ -170,6 +188,7 @@ class ProviderApiKey(Base):
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
+
 
 class LLMModel(Base):
     """
@@ -180,7 +199,9 @@ class LLMModel(Base):
     __tablename__ = "llm_models"
 
     id = Column(Integer, primary_key=True, index=True)
-    provider_id = Column(Integer, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False)
+    provider_id = Column(
+        Integer, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False
+    )
     # The model identifier as the provider expects it (e.g. "gpt-4o-mini")
     model_id = Column(String(200), nullable=False)
     # Human-friendly name
@@ -190,7 +211,9 @@ class LLMModel(Base):
     is_active = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Unique together: one model_id per provider
     __table_args__ = (
@@ -199,13 +222,18 @@ class LLMModel(Base):
 
     # Relationships
     provider = relationship("Provider", back_populates="models")
-    permissions = relationship("ApiKeyModelPermission", back_populates="model", cascade="all, delete-orphan")
-    permission_requests = relationship("PermissionRequest", back_populates="model", cascade="all, delete-orphan")
+    permissions = relationship(
+        "ApiKeyModelPermission", back_populates="model", cascade="all, delete-orphan"
+    )
+    permission_requests = relationship(
+        "PermissionRequest", back_populates="model", cascade="all, delete-orphan"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Gateway API Keys (user-facing)
 # ---------------------------------------------------------------------------
+
 
 class GatewayApiKey(Base):
     """
@@ -216,7 +244,9 @@ class GatewayApiKey(Base):
     __tablename__ = "gateway_api_keys"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     # The actual key value (stored as a hash; the raw key is shown once at creation)
     key_hash = Column(String(255), unique=True, index=True, nullable=False)
     # A prefix of the key for display purposes (e.g. "gw-abc1***")
@@ -243,11 +273,17 @@ class ApiKeyModelPermission(Base):
     __tablename__ = "api_key_model_permissions"
 
     id = Column(Integer, primary_key=True, index=True)
-    api_key_id = Column(Integer, ForeignKey("gateway_api_keys.id", ondelete="CASCADE"), nullable=False)
-    model_id = Column(Integer, ForeignKey("llm_models.id", ondelete="CASCADE"), nullable=False)
+    api_key_id = Column(
+        Integer, ForeignKey("gateway_api_keys.id", ondelete="CASCADE"), nullable=False
+    )
+    model_id = Column(
+        Integer, ForeignKey("llm_models.id", ondelete="CASCADE"), nullable=False
+    )
 
     # Per-permission token caps (optional overrides)
-    max_input_tokens = Column(Integer, nullable=True)   # None = no limit / use model default
+    max_input_tokens = Column(
+        Integer, nullable=True
+    )  # None = no limit / use model default
     max_output_tokens = Column(Integer, nullable=True)
 
     is_active = Column(Boolean, default=True, nullable=False)
@@ -267,6 +303,7 @@ class ApiKeyModelPermission(Base):
 # Permission Requests
 # ---------------------------------------------------------------------------
 
+
 class PermissionRequest(Base):
     """
     A user requests access to a model for one of their API keys.
@@ -276,11 +313,21 @@ class PermissionRequest(Base):
     __tablename__ = "permission_requests"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    api_key_id = Column(Integer, ForeignKey("gateway_api_keys.id", ondelete="CASCADE"), nullable=False)
-    model_id = Column(Integer, ForeignKey("llm_models.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    api_key_id = Column(
+        Integer, ForeignKey("gateway_api_keys.id", ondelete="CASCADE"), nullable=False
+    )
+    model_id = Column(
+        Integer, ForeignKey("llm_models.id", ondelete="CASCADE"), nullable=False
+    )
 
-    status = Column(SAEnum(PermissionRequestStatus), default=PermissionRequestStatus.pending, nullable=False)
+    status = Column(
+        SAEnum(PermissionRequestStatus),
+        default=PermissionRequestStatus.pending,
+        nullable=False,
+    )
     # Optional message from the user explaining why they need access
     request_message = Column(Text, nullable=True)
     # Optional message from the admin when approving/rejecting
@@ -289,10 +336,14 @@ class PermissionRequest(Base):
     reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
-    user = relationship("User", back_populates="permission_requests", foreign_keys=[user_id])
+    user = relationship(
+        "User", back_populates="permission_requests", foreign_keys=[user_id]
+    )
     api_key = relationship("GatewayApiKey")
     model = relationship("LLMModel", back_populates="permission_requests")
 
@@ -300,6 +351,7 @@ class PermissionRequest(Base):
 # ---------------------------------------------------------------------------
 # Environment Variables (admin-only encrypted KV store)
 # ---------------------------------------------------------------------------
+
 
 class EnvironmentVariable(Base):
     """
@@ -319,4 +371,6 @@ class EnvironmentVariable(Base):
     is_secret = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

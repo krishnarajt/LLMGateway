@@ -29,7 +29,7 @@ def get_current_user(
             detail="Authorization header must start with 'Bearer '",
         )
 
-    token = authorization[len("Bearer "):]
+    token = authorization[len("Bearer ") :]
     payload = verify_access_token(token)
     if payload is None:
         raise HTTPException(

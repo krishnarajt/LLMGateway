@@ -17,7 +17,10 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.db.models import (
-    GatewayApiKey, ApiKeyModelPermission, LLMModel, Provider,
+    GatewayApiKey,
+    ApiKeyModelPermission,
+    LLMModel,
+    Provider,
     ProviderApiKey,
 )
 from app.common.schemas import ChatConfig
@@ -39,6 +42,7 @@ _PROVIDER_REGISTRY = {
 
 class ChatServiceError(Exception):
     """Raised when something goes wrong in the chat service."""
+
     def __init__(self, message: str, status_code: int = 400):
         self.message = message
         self.status_code = status_code
@@ -82,11 +86,15 @@ def resolve_model(db: Session, model_id_str: str) -> LLMModel:
         .first()
     )
     if not model:
-        raise ChatServiceError(f"Model '{model_id_str}' not found or inactive", status_code=404)
+        raise ChatServiceError(
+            f"Model '{model_id_str}' not found or inactive", status_code=404
+        )
     return model
 
 
-def check_permission(db: Session, api_key: GatewayApiKey, model: LLMModel) -> ApiKeyModelPermission:
+def check_permission(
+    db: Session, api_key: GatewayApiKey, model: LLMModel
+) -> ApiKeyModelPermission:
     """
     Check the API key has permission to use the given model.
     Returns the permission row (which may contain token limits).
@@ -115,7 +123,9 @@ def get_provider_key(db: Session, provider: Provider) -> str:
     """
     key_row = (
         db.query(ProviderApiKey)
-        .filter(ProviderApiKey.provider_id == provider.id, ProviderApiKey.is_active == True)
+        .filter(
+            ProviderApiKey.provider_id == provider.id, ProviderApiKey.is_active == True
+        )
         .first()
     )
     if not key_row:
@@ -172,7 +182,10 @@ def execute_chat(
     # Apply permission-level token limits (the stricter of permission vs request)
     effective_max_output = config.max_output_tokens
     if perm.max_output_tokens is not None:
-        if effective_max_output is None or effective_max_output > perm.max_output_tokens:
+        if (
+            effective_max_output is None
+            or effective_max_output > perm.max_output_tokens
+        ):
             effective_max_output = perm.max_output_tokens
 
     # Step 4: Get provider adapter

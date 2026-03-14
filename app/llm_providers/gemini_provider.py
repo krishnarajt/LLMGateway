@@ -16,7 +16,9 @@ _TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 
 
 class GeminiProvider(LLMProviderBase):
-    def __init__(self, api_key: str, base_url: str = "https://generativelanguage.googleapis.com"):
+    def __init__(
+        self, api_key: str, base_url: str = "https://generativelanguage.googleapis.com"
+    ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
 
@@ -38,12 +40,14 @@ class GeminiProvider(LLMProviderBase):
         # Build user content parts
         parts = [{"text": user_prompt}]
         if image_base64:
-            parts.append({
-                "inline_data": {
-                    "mime_type": image_media_type,
-                    "data": image_base64,
+            parts.append(
+                {
+                    "inline_data": {
+                        "mime_type": image_media_type,
+                        "data": image_base64,
+                    }
                 }
-            })
+            )
 
         contents = []
         # System instruction is passed at the top level in Gemini API
@@ -57,9 +61,7 @@ class GeminiProvider(LLMProviderBase):
 
         # System instruction support
         if system_prompt:
-            payload["systemInstruction"] = {
-                "parts": [{"text": system_prompt}]
-            }
+            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
 
         # Generation config
         generation_config = {}

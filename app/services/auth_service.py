@@ -40,6 +40,7 @@ def _now() -> datetime:
 # Password hashing
 # ---------------------------------------------------------------------------
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a stored hash"""
     try:
@@ -77,7 +78,10 @@ def get_password_hash(password: str) -> str:
 # JWT tokens
 # ---------------------------------------------------------------------------
 
-def create_access_token(user_id: int, role: str = "user", expires_delta: Optional[timedelta] = None) -> str:
+
+def create_access_token(
+    user_id: int, role: str = "user", expires_delta: Optional[timedelta] = None
+) -> str:
     """Create a short-lived JWT access token, including the user's role."""
     expire = _now() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode = {"sub": str(user_id), "exp": expire, "type": "access", "role": role}
@@ -200,6 +204,7 @@ def revoke_all_user_tokens(db: Session, user_id: int) -> None:
 # User CRUD
 # ---------------------------------------------------------------------------
 
+
 def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
     """Verify username + password, return User or None"""
     user = db.query(User).filter(User.username == username).first()
@@ -210,8 +215,13 @@ def authenticate_user(db: Session, username: str, password: str) -> Optional[Use
     return user
 
 
-def create_user(db: Session, username: str, password: str, role: str = "user",
-                display_name: str = "") -> User:
+def create_user(
+    db: Session,
+    username: str,
+    password: str,
+    role: str = "user",
+    display_name: str = "",
+) -> User:
     """Create a new user with a hashed password"""
     hashed_password = get_password_hash(password)
     db_user = User(
@@ -251,7 +261,9 @@ def maybe_delete_default_admin(db: Session, new_admin_id: int) -> bool:
         .first()
     )
     if default_admin:
-        logger.info(f"Deleting default admin user (id={default_admin.id}) since a real admin exists")
+        logger.info(
+            f"Deleting default admin user (id={default_admin.id}) since a real admin exists"
+        )
         db.delete(default_admin)
         db.commit()
         return True

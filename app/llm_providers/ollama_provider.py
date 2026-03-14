@@ -79,7 +79,8 @@ class OllamaProvider(LLMProviderBase):
         usage = {
             "prompt_tokens": data.get("prompt_eval_count"),
             "completion_tokens": data.get("eval_count"),
-            "total_tokens": (data.get("prompt_eval_count") or 0) + (data.get("eval_count") or 0),
+            "total_tokens": (data.get("prompt_eval_count") or 0)
+            + (data.get("eval_count") or 0),
         }
 
         return {"content": content, "usage": usage}

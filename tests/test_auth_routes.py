@@ -1,13 +1,14 @@
 """Tests for authentication routes."""
 
-import pytest
 from app.db.models import User, UserRole
 from app.services.auth_service import get_password_hash
 
 
 class TestLogin:
     def test_login_success(self, client, admin_user):
-        resp = client.post("/api/auth/login", json={"username": "testadmin", "password": "adminpass"})
+        resp = client.post(
+            "/api/auth/login", json={"username": "testadmin", "password": "adminpass"}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "accessToken" in data
@@ -15,11 +16,15 @@ class TestLogin:
         assert data["role"] == "admin"
 
     def test_login_invalid_password(self, client, admin_user):
-        resp = client.post("/api/auth/login", json={"username": "testadmin", "password": "wrong"})
+        resp = client.post(
+            "/api/auth/login", json={"username": "testadmin", "password": "wrong"}
+        )
         assert resp.status_code == 401
 
     def test_login_nonexistent_user(self, client):
-        resp = client.post("/api/auth/login", json={"username": "ghost", "password": "pass"})
+        resp = client.post(
+            "/api/auth/login", json={"username": "ghost", "password": "pass"}
+        )
         assert resp.status_code == 401
 
     def test_login_default_admin_warning(self, client, db):
@@ -34,7 +39,9 @@ class TestLogin:
         db.add(user)
         db.commit()
 
-        resp = client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+        resp = client.post(
+            "/api/auth/login", json={"username": "admin", "password": "admin"}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["is_default_admin"] is True
@@ -45,7 +52,9 @@ class TestLogin:
 class TestRefreshAndLogout:
     def test_refresh_token(self, client, admin_user):
         # Login first
-        login_resp = client.post("/api/auth/login", json={"username": "testadmin", "password": "adminpass"})
+        login_resp = client.post(
+            "/api/auth/login", json={"username": "testadmin", "password": "adminpass"}
+        )
         refresh_token = login_resp.json()["refreshToken"]
 
         # Refresh
@@ -58,7 +67,9 @@ class TestRefreshAndLogout:
         assert resp.status_code == 401
 
     def test_logout(self, client, admin_user):
-        login_resp = client.post("/api/auth/login", json={"username": "testadmin", "password": "adminpass"})
+        login_resp = client.post(
+            "/api/auth/login", json={"username": "testadmin", "password": "adminpass"}
+        )
         refresh_token = login_resp.json()["refreshToken"]
 
         resp = client.post("/api/auth/logout", json={"refreshToken": refresh_token})
@@ -77,7 +88,9 @@ class TestChangePassword:
         assert resp.json()["success"] is True
 
         # Login with new password
-        resp = client.post("/api/auth/login", json={"username": "testadmin", "password": "newpass123"})
+        resp = client.post(
+            "/api/auth/login", json={"username": "testadmin", "password": "newpass123"}
+        )
         assert resp.status_code == 200
 
     def test_change_password_wrong_current(self, client, admin_user, admin_headers):

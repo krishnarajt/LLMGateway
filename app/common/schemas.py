@@ -5,12 +5,13 @@ Pydantic schemas for request/response validation across all API routes.
 from __future__ import annotations
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -49,6 +50,7 @@ class ChangePasswordRequest(BaseModel):
 # Admin – User management
 # ---------------------------------------------------------------------------
 
+
 class CreateUserRequest(BaseModel):
     username: str
     password: str
@@ -72,6 +74,7 @@ class UserOut(BaseModel):
 # ---------------------------------------------------------------------------
 # Providers
 # ---------------------------------------------------------------------------
+
 
 class ProviderCreate(BaseModel):
     name: str
@@ -103,6 +106,7 @@ class ProviderOut(BaseModel):
 # Provider API Keys
 # ---------------------------------------------------------------------------
 
+
 class ProviderApiKeyCreate(BaseModel):
     provider_id: int
     label: str = "default"
@@ -124,6 +128,7 @@ class ProviderApiKeyOut(BaseModel):
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
+
 
 class LLMModelCreate(BaseModel):
     provider_id: int
@@ -155,6 +160,7 @@ class LLMModelOut(BaseModel):
 # Gateway API Keys (user-facing)
 # ---------------------------------------------------------------------------
 
+
 class GatewayApiKeyCreate(BaseModel):
     label: str = "default"
 
@@ -174,6 +180,7 @@ class GatewayApiKeyOut(BaseModel):
 
 class GatewayApiKeyCreated(BaseModel):
     """Returned only once when the key is first created — contains the raw key."""
+
     id: int
     key: str  # the raw key — shown only once
     key_prefix: str
@@ -200,6 +207,7 @@ GatewayApiKeyOut.model_rebuild()
 # ---------------------------------------------------------------------------
 # Permission Requests
 # ---------------------------------------------------------------------------
+
 
 class PermissionRequestCreate(BaseModel):
     api_key_id: int
@@ -238,6 +246,7 @@ class PermissionRequestOut(BaseModel):
 # Environment Variables (admin-only)
 # ---------------------------------------------------------------------------
 
+
 class EnvVarCreate(BaseModel):
     key: str
     value: str
@@ -269,11 +278,13 @@ class EnvVarOut(BaseModel):
 # Chat (the main LLM gateway endpoint)
 # ---------------------------------------------------------------------------
 
+
 class ChatConfig(BaseModel):
     """
     Flexible configuration dict for an LLM call.
     The caller specifies what model to use and optional generation params.
     """
+
     # Which model to call — use the model_id string (e.g. "gpt-4o", "gemini-1.5-pro")
     model: str
     # Optional overrides
@@ -292,6 +303,7 @@ class ChatRequest(BaseModel):
     - image_base64: optional base64-encoded image (for vision models)
     - config: model + generation parameters
     """
+
     system_prompt: Optional[str] = None
     user_prompt: str
     image_base64: Optional[str] = None
@@ -301,6 +313,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     """Output from the /chat endpoint."""
+
     content: str
     model: str
     provider: str
@@ -310,6 +323,7 @@ class ChatResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Admin – direct permission grant (admin adds permission to a key directly)
 # ---------------------------------------------------------------------------
+
 
 class AdminGrantPermission(BaseModel):
     api_key_id: int

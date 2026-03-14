@@ -12,17 +12,24 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime, timezone
 
 from app.db.database import get_db
 from app.db.models import (
-    User, GatewayApiKey, ApiKeyModelPermission, LLMModel,
-    PermissionRequest, PermissionRequestStatus, Provider,
+    User,
+    GatewayApiKey,
+    ApiKeyModelPermission,
+    LLMModel,
+    PermissionRequest,
+    PermissionRequestStatus,
+    Provider,
 )
 from app.common.schemas import (
-    GatewayApiKeyCreate, GatewayApiKeyOut, GatewayApiKeyCreated,
+    GatewayApiKeyCreate,
+    GatewayApiKeyOut,
+    GatewayApiKeyCreated,
     ApiKeyPermissionOut,
-    PermissionRequestCreate, PermissionRequestOut,
+    PermissionRequestCreate,
+    PermissionRequestOut,
     LLMModelOut,
 )
 from app.utils.dependencies import require_user
@@ -36,6 +43,7 @@ router = APIRouter(prefix="/user", tags=["User"])
 # ═══════════════════════════════════════════════════════════════════════════
 # Gateway API Key Management
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _generate_gateway_key() -> tuple[str, str, str]:
     """
@@ -99,22 +107,26 @@ def list_api_keys(
                 id=p.id,
                 model_id=p.model_id,
                 model_display_name=p.model.display_name if p.model else None,
-                provider_name=p.model.provider.name if p.model and p.model.provider else None,
+                provider_name=p.model.provider.name
+                if p.model and p.model.provider
+                else None,
                 max_input_tokens=p.max_input_tokens,
                 max_output_tokens=p.max_output_tokens,
                 is_active=p.is_active,
             )
             perms.append(perm_out)
 
-        result.append(GatewayApiKeyOut(
-            id=k.id,
-            key_prefix=k.key_prefix,
-            label=k.label,
-            is_active=k.is_active,
-            created_at=k.created_at,
-            last_used_at=k.last_used_at,
-            permissions=perms,
-        ))
+        result.append(
+            GatewayApiKeyOut(
+                id=k.id,
+                key_prefix=k.key_prefix,
+                label=k.label,
+                is_active=k.is_active,
+                created_at=k.created_at,
+                last_used_at=k.last_used_at,
+                permissions=perms,
+            )
+        )
     return result
 
 
@@ -160,6 +172,7 @@ def toggle_api_key(
 # Permission Requests
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @router.post("/permission-requests", response_model=PermissionRequestOut)
 def create_permission_request(
     request: PermissionRequestCreate,
@@ -170,11 +183,16 @@ def create_permission_request(
     # Verify the API key belongs to the current user
     api_key = (
         db.query(GatewayApiKey)
-        .filter(GatewayApiKey.id == request.api_key_id, GatewayApiKey.user_id == current_user.id)
+        .filter(
+            GatewayApiKey.id == request.api_key_id,
+            GatewayApiKey.user_id == current_user.id,
+        )
         .first()
     )
     if not api_key:
-        raise HTTPException(status_code=404, detail="API key not found or does not belong to you")
+        raise HTTPException(
+            status_code=404, detail="API key not found or does not belong to you"
+        )
 
     # Verify the model exists
     model = db.query(LLMModel).filter(LLMModel.id == request.model_id).first()
@@ -191,7 +209,9 @@ def create_permission_request(
         .first()
     )
     if existing_perm:
-        raise HTTPException(status_code=400, detail="Permission already granted for this model")
+        raise HTTPException(
+            status_code=400, detail="Permission already granted for this model"
+        )
 
     # Check for pending request
     pending = (
@@ -204,7 +224,9 @@ def create_permission_request(
         .first()
     )
     if pending:
-        raise HTTPException(status_code=400, detail="A pending request already exists for this model")
+        raise HTTPException(
+            status_code=400, detail="A pending request already exists for this model"
+        )
 
     perm_req = PermissionRequest(
         user_id=current_user.id,
@@ -247,27 +269,32 @@ def list_my_permission_requests(
     )
     result = []
     for r in requests:
-        result.append(PermissionRequestOut(
-            id=r.id,
-            user_id=r.user_id,
-            username=current_user.username,
-            api_key_id=r.api_key_id,
-            api_key_label=r.api_key.label if r.api_key else None,
-            model_id=r.model_id,
-            model_display_name=r.model.display_name if r.model else None,
-            provider_name=r.model.provider.name if r.model and r.model.provider else None,
-            status=r.status.value,
-            request_message=r.request_message,
-            admin_message=r.admin_message,
-            reviewed_by=r.reviewed_by,
-            created_at=r.created_at,
-        ))
+        result.append(
+            PermissionRequestOut(
+                id=r.id,
+                user_id=r.user_id,
+                username=current_user.username,
+                api_key_id=r.api_key_id,
+                api_key_label=r.api_key.label if r.api_key else None,
+                model_id=r.model_id,
+                model_display_name=r.model.display_name if r.model else None,
+                provider_name=r.model.provider.name
+                if r.model and r.model.provider
+                else None,
+                status=r.status.value,
+                request_message=r.request_message,
+                admin_message=r.admin_message,
+                reviewed_by=r.reviewed_by,
+                created_at=r.created_at,
+            )
+        )
     return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Available Models (read-only, any user can see)
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @router.get("/models", response_model=List[LLMModelOut])
 def list_available_models(db: Session = Depends(get_db)):

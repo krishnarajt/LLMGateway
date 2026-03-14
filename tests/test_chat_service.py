@@ -6,8 +6,12 @@ from unittest.mock import patch, MagicMock
 
 from app.db.models import GatewayApiKey, ApiKeyModelPermission
 from app.services.chat_service import (
-    resolve_api_key, resolve_model, check_permission,
-    get_provider_key, ChatServiceError, execute_chat,
+    resolve_api_key,
+    resolve_model,
+    check_permission,
+    get_provider_key,
+    ChatServiceError,
+    execute_chat,
 )
 from app.common.schemas import ChatConfig
 from app.utils.encryption import encrypt_value, decrypt_value
@@ -131,7 +135,9 @@ class TestGetProviderKey:
 
 
 class TestExecuteChat:
-    def test_full_chat_flow(self, db, regular_user, gpt4_model, openai_provider, openai_api_key):
+    def test_full_chat_flow(
+        self, db, regular_user, gpt4_model, openai_provider, openai_api_key
+    ):
         """Full integration test of the chat flow (with mocked provider call)."""
         raw_key = "gw-full-chat-test"
         key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
@@ -155,7 +161,10 @@ class TestExecuteChat:
         config = ChatConfig(model="gpt-4o")
 
         # Mock the actual HTTP call to OpenAI
-        mock_result = {"content": "Hello! I'm a test response.", "usage": {"total_tokens": 42}}
+        mock_result = {
+            "content": "Hello! I'm a test response.",
+            "usage": {"total_tokens": 42},
+        }
         with patch("app.services.chat_service.get_provider_adapter") as mock_adapter:
             mock_provider = MagicMock()
             mock_provider.chat.return_value = mock_result

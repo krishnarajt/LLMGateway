@@ -1,7 +1,5 @@
 """Tests for user routes — API key management, permission requests."""
 
-import pytest
-
 
 class TestGatewayApiKeys:
     def test_create_api_key(self, client, user_headers):
@@ -19,7 +17,9 @@ class TestGatewayApiKeys:
 
     def test_list_api_keys(self, client, user_headers):
         # Create a key first
-        client.post("/api/user/api-keys", json={"label": "list-test"}, headers=user_headers)
+        client.post(
+            "/api/user/api-keys", json={"label": "list-test"}, headers=user_headers
+        )
 
         resp = client.get("/api/user/api-keys", headers=user_headers)
         assert resp.status_code == 200
@@ -30,7 +30,9 @@ class TestGatewayApiKeys:
             assert "key" not in k or k.get("key") is None
 
     def test_toggle_api_key(self, client, user_headers):
-        create_resp = client.post("/api/user/api-keys", json={"label": "toggle-test"}, headers=user_headers)
+        create_resp = client.post(
+            "/api/user/api-keys", json={"label": "toggle-test"}, headers=user_headers
+        )
         key_id = create_resp.json()["id"]
 
         resp = client.patch(f"/api/user/api-keys/{key_id}/toggle", headers=user_headers)
@@ -38,7 +40,9 @@ class TestGatewayApiKeys:
         assert resp.json()["is_active"] is False
 
     def test_revoke_api_key(self, client, user_headers):
-        create_resp = client.post("/api/user/api-keys", json={"label": "revoke-test"}, headers=user_headers)
+        create_resp = client.post(
+            "/api/user/api-keys", json={"label": "revoke-test"}, headers=user_headers
+        )
         key_id = create_resp.json()["id"]
 
         resp = client.delete(f"/api/user/api-keys/{key_id}", headers=user_headers)
@@ -47,7 +51,9 @@ class TestGatewayApiKeys:
 
     def test_cannot_revoke_other_users_key(self, client, admin_headers, user_headers):
         # Create key as regular user
-        create_resp = client.post("/api/user/api-keys", json={"label": "other"}, headers=user_headers)
+        create_resp = client.post(
+            "/api/user/api-keys", json={"label": "other"}, headers=user_headers
+        )
         key_id = create_resp.json()["id"]
 
         # Try to delete as admin (different user) — should 404 because
@@ -59,7 +65,9 @@ class TestGatewayApiKeys:
 class TestPermissionRequests:
     def test_create_permission_request(self, client, user_headers, gpt4_model):
         # Create an API key first
-        key_resp = client.post("/api/user/api-keys", json={"label": "perm-test"}, headers=user_headers)
+        key_resp = client.post(
+            "/api/user/api-keys", json={"label": "perm-test"}, headers=user_headers
+        )
         key_id = key_resp.json()["id"]
 
         resp = client.post(
@@ -77,7 +85,9 @@ class TestPermissionRequests:
         assert data["model_display_name"] == "GPT-4o"
 
     def test_duplicate_pending_request_rejected(self, client, user_headers, gpt4_model):
-        key_resp = client.post("/api/user/api-keys", json={"label": "dup-test"}, headers=user_headers)
+        key_resp = client.post(
+            "/api/user/api-keys", json={"label": "dup-test"}, headers=user_headers
+        )
         key_id = key_resp.json()["id"]
 
         # First request
@@ -96,7 +106,9 @@ class TestPermissionRequests:
         assert resp.status_code == 400
 
     def test_list_my_permission_requests(self, client, user_headers, gpt4_model):
-        key_resp = client.post("/api/user/api-keys", json={"label": "list-perm"}, headers=user_headers)
+        key_resp = client.post(
+            "/api/user/api-keys", json={"label": "list-perm"}, headers=user_headers
+        )
         key_id = key_resp.json()["id"]
 
         client.post(
@@ -114,7 +126,9 @@ class TestPermissionRequests:
     ):
         """Full flow: user requests, admin approves, permission is created."""
         # User creates API key and requests permission
-        key_resp = client.post("/api/user/api-keys", json={"label": "approve-test"}, headers=user_headers)
+        key_resp = client.post(
+            "/api/user/api-keys", json={"label": "approve-test"}, headers=user_headers
+        )
         key_id = key_resp.json()["id"]
 
         req_resp = client.post(
@@ -149,7 +163,9 @@ class TestPermissionRequests:
     def test_admin_rejects_permission_request(
         self, client, user_headers, admin_headers, gpt4_model
     ):
-        key_resp = client.post("/api/user/api-keys", json={"label": "reject-test"}, headers=user_headers)
+        key_resp = client.post(
+            "/api/user/api-keys", json={"label": "reject-test"}, headers=user_headers
+        )
         key_id = key_resp.json()["id"]
 
         req_resp = client.post(
@@ -167,7 +183,9 @@ class TestPermissionRequests:
         assert resp.status_code == 200
 
         # Check the user's request is now rejected
-        my_reqs = client.get("/api/user/permission-requests", headers=user_headers).json()
+        my_reqs = client.get(
+            "/api/user/permission-requests", headers=user_headers
+        ).json()
         rejected = [r for r in my_reqs if r["id"] == req_id][0]
         assert rejected["status"] == "rejected"
         assert rejected["admin_message"] == "Not approved at this time"

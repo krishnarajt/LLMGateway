@@ -1,7 +1,5 @@
 """Tests for admin routes."""
 
-import pytest
-
 
 class TestAdminUserManagement:
     def test_create_user(self, client, admin_headers):
@@ -31,7 +29,9 @@ class TestAdminUserManagement:
         assert len(users) >= 2
 
     def test_delete_user(self, client, admin_headers, regular_user):
-        resp = client.delete(f"/api/admin/users/{regular_user.id}", headers=admin_headers)
+        resp = client.delete(
+            f"/api/admin/users/{regular_user.id}", headers=admin_headers
+        )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
@@ -75,7 +75,9 @@ class TestProviderManagement:
         assert resp.json()["display_name"] == "OpenAI Updated"
 
     def test_delete_provider(self, client, admin_headers, openai_provider):
-        resp = client.delete(f"/api/admin/providers/{openai_provider.id}", headers=admin_headers)
+        resp = client.delete(
+            f"/api/admin/providers/{openai_provider.id}", headers=admin_headers
+        )
         assert resp.status_code == 200
 
 
@@ -83,7 +85,11 @@ class TestProviderApiKeys:
     def test_add_provider_api_key(self, client, admin_headers, openai_provider):
         resp = client.post(
             "/api/admin/provider-api-keys",
-            json={"provider_id": openai_provider.id, "label": "my-key", "api_key": "sk-test123"},
+            json={
+                "provider_id": openai_provider.id,
+                "label": "my-key",
+                "api_key": "sk-test123",
+            },
             headers=admin_headers,
         )
         assert resp.status_code == 200
@@ -93,7 +99,9 @@ class TestProviderApiKeys:
         assert "encrypted_key" not in data
         assert "api_key" not in data
 
-    def test_list_provider_api_keys(self, client, admin_headers, openai_provider, openai_api_key):
+    def test_list_provider_api_keys(
+        self, client, admin_headers, openai_provider, openai_api_key
+    ):
         resp = client.get(
             f"/api/admin/provider-api-keys/{openai_provider.id}",
             headers=admin_headers,
@@ -161,7 +169,9 @@ class TestModelManagement:
         assert resp.json()["display_name"] == "GPT-4o Updated"
 
     def test_delete_model(self, client, admin_headers, gpt4_model):
-        resp = client.delete(f"/api/admin/models/{gpt4_model.id}", headers=admin_headers)
+        resp = client.delete(
+            f"/api/admin/models/{gpt4_model.id}", headers=admin_headers
+        )
         assert resp.status_code == 200
 
 
@@ -232,7 +242,9 @@ class TestEnvironmentVariables:
 
 
 class TestAdminDirectPermissionGrant:
-    def test_grant_permission(self, client, admin_headers, db, regular_user, gpt4_model):
+    def test_grant_permission(
+        self, client, admin_headers, db, regular_user, gpt4_model
+    ):
         """Admin can directly grant model permission to a user's API key."""
         from app.db.models import GatewayApiKey
         import hashlib
@@ -251,7 +263,11 @@ class TestAdminDirectPermissionGrant:
 
         resp = client.post(
             "/api/admin/grant-permission",
-            json={"api_key_id": gw_key.id, "model_id": gpt4_model.id, "max_output_tokens": 4096},
+            json={
+                "api_key_id": gw_key.id,
+                "model_id": gpt4_model.id,
+                "max_output_tokens": 4096,
+            },
             headers=admin_headers,
         )
         assert resp.status_code == 200

@@ -10,38 +10,57 @@ Covers:
   - Direct permission grants to API keys
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
 from app.db.database import get_db
 from app.db.models import (
-    User, UserRole, Provider, ProviderApiKey, LLMModel,
-    EnvironmentVariable, PermissionRequest, PermissionRequestStatus,
-    GatewayApiKey, ApiKeyModelPermission,
+    User,
+    UserRole,
+    Provider,
+    ProviderApiKey,
+    LLMModel,
+    EnvironmentVariable,
+    PermissionRequest,
+    PermissionRequestStatus,
+    GatewayApiKey,
+    ApiKeyModelPermission,
 )
 from app.common.schemas import (
-    CreateUserRequest, UserOut,
-    ProviderCreate, ProviderUpdate, ProviderOut,
-    ProviderApiKeyCreate, ProviderApiKeyOut,
-    LLMModelCreate, LLMModelUpdate, LLMModelOut,
-    EnvVarCreate, EnvVarUpdate, EnvVarOut,
-    PermissionRequestOut, PermissionRequestReview,
+    CreateUserRequest,
+    UserOut,
+    ProviderCreate,
+    ProviderUpdate,
+    ProviderOut,
+    ProviderApiKeyCreate,
+    ProviderApiKeyOut,
+    LLMModelCreate,
+    LLMModelUpdate,
+    LLMModelOut,
+    EnvVarCreate,
+    EnvVarUpdate,
+    EnvVarOut,
+    PermissionRequestOut,
+    PermissionRequestReview,
     AdminGrantPermission,
 )
-from app.services.auth_service import create_user, get_password_hash, maybe_delete_default_admin
+from app.services.auth_service import create_user, maybe_delete_default_admin
 from app.utils.dependencies import require_admin
 from app.utils.encryption import encrypt_value, decrypt_value
 from app.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(require_admin)])
+router = APIRouter(
+    prefix="/admin", tags=["Admin"], dependencies=[Depends(require_admin)]
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # User Management
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 @router.post("/users", response_model=UserOut)
 def admin_create_user(
@@ -55,8 +74,11 @@ def admin_create_user(
         raise HTTPException(status_code=400, detail="Username already exists")
 
     user = create_user(
-        db, request.username, request.password,
-        role=request.role, display_name=request.display_name or "",
+        db,
+        request.username,
+        request.password,
+        role=request.role,
+        display_name=request.display_name or "",
     )
 
     # If we just created a new admin, try to delete the default admin
@@ -94,12 +116,15 @@ def admin_delete_user(
 # Providers
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @router.post("/providers", response_model=ProviderOut)
 def admin_create_provider(request: ProviderCreate, db: Session = Depends(get_db)):
     """Add a new LLM provider."""
     existing = db.query(Provider).filter(Provider.name == request.name).first()
     if existing:
-        raise HTTPException(status_code=400, detail=f"Provider '{request.name}' already exists")
+        raise HTTPException(
+            status_code=400, detail=f"Provider '{request.name}' already exists"
+        )
     provider = Provider(**request.model_dump())
     db.add(provider)
     db.commit()
@@ -115,7 +140,9 @@ def admin_list_providers(db: Session = Depends(get_db)):
 
 
 @router.put("/providers/{provider_id}", response_model=ProviderOut)
-def admin_update_provider(provider_id: int, request: ProviderUpdate, db: Session = Depends(get_db)):
+def admin_update_provider(
+    provider_id: int, request: ProviderUpdate, db: Session = Depends(get_db)
+):
     """Update provider details."""
     provider = db.query(Provider).filter(Provider.id == provider_id).first()
     if not provider:
@@ -142,8 +169,11 @@ def admin_delete_provider(provider_id: int, db: Session = Depends(get_db)):
 # Provider API Keys
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @router.post("/provider-api-keys", response_model=ProviderApiKeyOut)
-def admin_add_provider_api_key(request: ProviderApiKeyCreate, db: Session = Depends(get_db)):
+def admin_add_provider_api_key(
+    request: ProviderApiKeyCreate, db: Session = Depends(get_db)
+):
     """Add an encrypted API key for a provider."""
     provider = db.query(Provider).filter(Provider.id == request.provider_id).first()
     if not provider:
@@ -199,6 +229,7 @@ def admin_toggle_provider_api_key(key_id: int, db: Session = Depends(get_db)):
 # LLM Models
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @router.post("/models", response_model=LLMModelOut)
 def admin_create_model(request: LLMModelCreate, db: Session = Depends(get_db)):
     """Register a new LLM model under a provider."""
@@ -208,11 +239,17 @@ def admin_create_model(request: LLMModelCreate, db: Session = Depends(get_db)):
 
     existing = (
         db.query(LLMModel)
-        .filter(LLMModel.provider_id == request.provider_id, LLMModel.model_id == request.model_id)
+        .filter(
+            LLMModel.provider_id == request.provider_id,
+            LLMModel.model_id == request.model_id,
+        )
         .first()
     )
     if existing:
-        raise HTTPException(status_code=400, detail=f"Model '{request.model_id}' already exists for this provider")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{request.model_id}' already exists for this provider",
+        )
 
     model = LLMModel(**request.model_dump())
     db.add(model)
@@ -237,7 +274,9 @@ def admin_list_models(db: Session = Depends(get_db)):
 
 
 @router.put("/models/{model_id}", response_model=LLMModelOut)
-def admin_update_model(model_id: int, request: LLMModelUpdate, db: Session = Depends(get_db)):
+def admin_update_model(
+    model_id: int, request: LLMModelUpdate, db: Session = Depends(get_db)
+):
     """Update a model's metadata."""
     model = db.query(LLMModel).filter(LLMModel.id == model_id).first()
     if not model:
@@ -266,12 +305,19 @@ def admin_delete_model(model_id: int, db: Session = Depends(get_db)):
 # Environment Variables
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @router.post("/env-vars", response_model=EnvVarOut)
 def admin_create_env_var(request: EnvVarCreate, db: Session = Depends(get_db)):
     """Create a new encrypted environment variable."""
-    existing = db.query(EnvironmentVariable).filter(EnvironmentVariable.key == request.key).first()
+    existing = (
+        db.query(EnvironmentVariable)
+        .filter(EnvironmentVariable.key == request.key)
+        .first()
+    )
     if existing:
-        raise HTTPException(status_code=400, detail=f"Key '{request.key}' already exists")
+        raise HTTPException(
+            status_code=400, detail=f"Key '{request.key}' already exists"
+        )
 
     env_var = EnvironmentVariable(
         key=request.key,
@@ -293,9 +339,13 @@ def admin_list_env_vars(db: Session = Depends(get_db)):
 
 
 @router.put("/env-vars/{env_id}", response_model=EnvVarOut)
-def admin_update_env_var(env_id: int, request: EnvVarUpdate, db: Session = Depends(get_db)):
+def admin_update_env_var(
+    env_id: int, request: EnvVarUpdate, db: Session = Depends(get_db)
+):
     """Update an environment variable."""
-    env_var = db.query(EnvironmentVariable).filter(EnvironmentVariable.id == env_id).first()
+    env_var = (
+        db.query(EnvironmentVariable).filter(EnvironmentVariable.id == env_id).first()
+    )
     if not env_var:
         raise HTTPException(status_code=404, detail="Environment variable not found")
     if request.value is not None:
@@ -312,7 +362,9 @@ def admin_update_env_var(env_id: int, request: EnvVarUpdate, db: Session = Depen
 @router.delete("/env-vars/{env_id}")
 def admin_delete_env_var(env_id: int, db: Session = Depends(get_db)):
     """Delete an environment variable."""
-    env_var = db.query(EnvironmentVariable).filter(EnvironmentVariable.id == env_id).first()
+    env_var = (
+        db.query(EnvironmentVariable).filter(EnvironmentVariable.id == env_id).first()
+    )
     if not env_var:
         raise HTTPException(status_code=404, detail="Environment variable not found")
     db.delete(env_var)
@@ -338,6 +390,7 @@ def _env_var_to_out(ev: EnvironmentVariable) -> EnvVarOut:
 # Permission Request Review
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @router.get("/permission-requests", response_model=List[PermissionRequestOut])
 def admin_list_permission_requests(
     status_filter: str = None,
@@ -359,7 +412,9 @@ def admin_review_permission_request(
     admin: User = Depends(require_admin),
 ):
     """Approve or reject a permission request."""
-    perm_req = db.query(PermissionRequest).filter(PermissionRequest.id == request_id).first()
+    perm_req = (
+        db.query(PermissionRequest).filter(PermissionRequest.id == request_id).first()
+    )
     if not perm_req:
         raise HTTPException(status_code=404, detail="Permission request not found")
     if perm_req.status != PermissionRequestStatus.pending:
@@ -398,13 +453,16 @@ def admin_review_permission_request(
 # Direct Permission Grant
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @router.post("/grant-permission")
 def admin_grant_permission(
     request: AdminGrantPermission,
     db: Session = Depends(get_db),
 ):
     """Admin directly grants a model permission to a gateway API key."""
-    api_key = db.query(GatewayApiKey).filter(GatewayApiKey.id == request.api_key_id).first()
+    api_key = (
+        db.query(GatewayApiKey).filter(GatewayApiKey.id == request.api_key_id).first()
+    )
     if not api_key:
         raise HTTPException(status_code=404, detail="API key not found")
     model = db.query(LLMModel).filter(LLMModel.id == request.model_id).first()
