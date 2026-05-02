@@ -1,6 +1,6 @@
 """
 Abstract base class for all LLM provider adapters.
-Each provider (OpenAI, Gemini, Ollama) implements this interface.
+Each provider (OpenAI, Gemini, Ollama, etc.) implements this interface.
 """
 
 from abc import ABC, abstractmethod
@@ -22,6 +22,7 @@ class LLMProviderBase(ABC):
         max_output_tokens: Optional[int] = None,
         top_p: Optional[float] = None,
         extra: Optional[dict] = None,
+        include_thinking: bool = False,
     ) -> dict:
         """
         Send a chat completion request and return the result.
@@ -29,5 +30,6 @@ class LLMProviderBase(ABC):
         Returns a dict with at least:
           - content: str (the model's text response)
           - usage: dict | None (token usage info)
+          - thinking: str | None (only when explicitly requested)
         """
         ...

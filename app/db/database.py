@@ -114,6 +114,18 @@ def _seed_defaults():
                 "base_url": "http://localhost:11434",
                 "provider_type": "ollama",
             },
+            {
+                "name": "groq",
+                "display_name": "Groq",
+                "base_url": "https://api.groq.com/openai/v1",
+                "provider_type": "groq",
+            },
+            {
+                "name": "huggingface",
+                "display_name": "Hugging Face",
+                "base_url": "https://router.huggingface.co/v1",
+                "provider_type": "huggingface",
+            },
         ]
         for prov in default_providers:
             existing = db.query(Provider).filter(Provider.name == prov["name"]).first()

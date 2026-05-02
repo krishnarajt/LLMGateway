@@ -143,7 +143,7 @@ class Provider(Base):
     # Base URL for API calls (e.g. "https://api.openai.com/v1" or "http://localhost:11434")
     base_url = Column(String(500), nullable=True)
     # Provider type used by the code to pick the right adapter
-    provider_type = Column(String(50), nullable=False)  # openai | gemini | ollama
+    provider_type = Column(String(50), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

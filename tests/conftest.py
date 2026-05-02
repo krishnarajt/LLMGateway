@@ -194,6 +194,36 @@ def ollama_provider(db) -> Provider:
 
 
 @pytest.fixture
+def groq_provider(db) -> Provider:
+    """Seed a Groq provider."""
+    p = Provider(
+        name="groq",
+        display_name="Groq",
+        base_url="https://api.groq.com/openai/v1",
+        provider_type="groq",
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return p
+
+
+@pytest.fixture
+def huggingface_provider(db) -> Provider:
+    """Seed a Hugging Face provider."""
+    p = Provider(
+        name="huggingface",
+        display_name="Hugging Face",
+        base_url="https://router.huggingface.co/v1",
+        provider_type="huggingface",
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return p
+
+
+@pytest.fixture
 def gpt4_model(db, openai_provider) -> LLMModel:
     """Seed a GPT-4o model."""
     m = LLMModel(

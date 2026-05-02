@@ -8,6 +8,7 @@ import httpx
 from typing import Optional
 
 from app.llm_providers import LLMProviderBase
+from app.llm_providers.response_utils import normalized_response
 from app.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -33,6 +34,7 @@ class GeminiProvider(LLMProviderBase):
         max_output_tokens: Optional[int] = None,
         top_p: Optional[float] = None,
         extra: Optional[dict] = None,
+        include_thinking: bool = False,
     ) -> dict:
         # Gemini uses a different request structure than OpenAI
         # Endpoint: POST /v1beta/models/{model}:generateContent?key=API_KEY
@@ -71,8 +73,30 @@ class GeminiProvider(LLMProviderBase):
             generation_config["maxOutputTokens"] = max_output_tokens
         if top_p is not None:
             generation_config["topP"] = top_p
+
+        extra_payload = dict(extra or {})
+        extra_generation_config = extra_payload.pop(
+            "generationConfig", extra_payload.pop("generation_config", None)
+        )
+        if extra_generation_config:
+            generation_config.update(extra_generation_config)
+
+        thinking_config = dict(
+            generation_config.pop("thinkingConfig", None)
+            or generation_config.pop("thinking_config", None)
+            or {}
+        )
+        if include_thinking:
+            thinking_config["includeThoughts"] = True
+        elif "includeThoughts" in thinking_config:
+            thinking_config["includeThoughts"] = False
+        if thinking_config:
+            generation_config["thinkingConfig"] = thinking_config
+
         if generation_config:
             payload["generationConfig"] = generation_config
+        if extra_payload:
+            payload.update(extra_payload)
 
         url = f"{self.base_url}/v1beta/models/{model_id}:generateContent"
         params = {"key": self.api_key}
@@ -94,7 +118,17 @@ class GeminiProvider(LLMProviderBase):
             raise ValueError("Gemini returned no candidates")
 
         content_parts = candidates[0].get("content", {}).get("parts", [])
-        content = "".join(p.get("text", "") for p in content_parts)
+        answer_parts = []
+        thinking_parts = []
+        for part in content_parts:
+            text = part.get("text", "")
+            if not text:
+                continue
+            if part.get("thought"):
+                thinking_parts.append(text)
+            else:
+                answer_parts.append(text)
+        content = "".join(answer_parts)
 
         # Token usage
         usage_meta = data.get("usageMetadata", {})
@@ -104,4 +138,9 @@ class GeminiProvider(LLMProviderBase):
             "total_tokens": usage_meta.get("totalTokenCount"),
         }
 
-        return {"content": content, "usage": usage}
+        return normalized_response(
+            content=content,
+            usage=usage,
+            include_thinking=include_thinking,
+            thinking_parts=thinking_parts,
+        )

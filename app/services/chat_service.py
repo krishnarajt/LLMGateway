@@ -30,6 +30,8 @@ from app.common.schemas import ChatConfig
 from app.llm_providers.openai_provider import OpenAIProvider
 from app.llm_providers.gemini_provider import GeminiProvider
 from app.llm_providers.ollama_provider import OllamaProvider
+from app.llm_providers.groq_provider import GroqProvider
+from app.llm_providers.huggingface_provider import HuggingFaceProvider
 from app.utils.encryption import decrypt_value
 from app.utils.logging_utils import get_logger
 
@@ -40,6 +42,8 @@ _PROVIDER_REGISTRY = {
     "openai": OpenAIProvider,
     "gemini": GeminiProvider,
     "ollama": OllamaProvider,
+    "groq": GroqProvider,
+    "huggingface": HuggingFaceProvider,
 }
 
 
@@ -194,8 +198,9 @@ def get_provider_adapter(provider: Provider, api_key: str):
             f"Unsupported provider type: '{provider.provider_type}'",
             status_code=500,
         )
-    base_url = provider.base_url or ""
-    return adapter_cls(api_key=api_key, base_url=base_url)
+    if provider.base_url:
+        return adapter_cls(api_key=api_key, base_url=provider.base_url)
+    return adapter_cls(api_key=api_key)
 
 
 def _effective_max_output(config: ChatConfig, perm: ApiKeyModelPermission) -> int | None:
@@ -277,6 +282,7 @@ def _call_model_with_provider_keys(
                 max_output_tokens=effective_max_output,
                 top_p=config.top_p,
                 extra=config.extra,
+                include_thinking=config.thinking,
             )
         except Exception as exc:
             status_code = _failure_status_code(exc)
@@ -415,12 +421,15 @@ def execute_chat(
                 image_media_type=image_media_type,
                 config=config,
             )
-            return {
+            response = {
                 "content": result["content"],
                 "model": attempt_model.model_id,
                 "provider": attempt_model.provider.name,
                 "usage": result.get("usage"),
             }
+            if config.thinking and result.get("thinking"):
+                response["thinking"] = result["thinking"]
+            return response
         except ProviderAttemptFailure as failure:
             failures.append(failure)
 

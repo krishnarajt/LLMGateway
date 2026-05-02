@@ -36,6 +36,10 @@ def chat(
     Authentication: pass your gateway API key in the X-API-Key header.
     """
     try:
+        config = request.config
+        if request.thinking is not None:
+            config = request.config.model_copy(update={"thinking": request.thinking})
+
         result = execute_chat(
             db=db,
             raw_api_key=x_api_key,
@@ -43,7 +47,7 @@ def chat(
             user_prompt=request.user_prompt,
             image_base64=request.image_base64,
             image_media_type=request.image_media_type or "image/png",
-            config=request.config,
+            config=config,
         )
         return ChatResponse(**result)
 

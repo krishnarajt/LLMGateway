@@ -62,6 +62,21 @@ DB_SCHEMA: str = os.getenv("DB_SCHEMA", "public")
 PROVIDER_API_KEYS_BY_TYPE: Dict[str, List[str]] = {
     "openai": _split_key_list(os.getenv("OPENAI_API_KEYS", "")),
     "gemini": _split_key_list(os.getenv("GEMINI_API_KEYS", "")),
+    "groq": _split_key_list(os.getenv("GROQ_API_KEYS", "")),
+    "huggingface": _split_key_list(os.getenv("HUGGINGFACE_API_KEYS", "")),
+}
+
+PROVIDER_API_KEY_ENV_ALIASES: Dict[str, List[str]] = {
+    "openai": ["OPENAI_API_KEY"],
+    "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    "groq": ["GROQ_API_KEY"],
+    "huggingface": [
+        "HF_TOKEN",
+        "HUGGINGFACE_API_KEY",
+        "HUGGING_FACE_API_KEY",
+        "HUGGING_FACE_API_KEYS",
+        "HUGGINGFACEHUB_API_TOKEN",
+    ],
 }
 
 
@@ -81,6 +96,9 @@ def get_provider_api_keys_from_env(provider_name: str, provider_type: str) -> Li
     keys: List[str] = []
     for env_key in dict.fromkeys(candidates):
         keys.extend(_split_key_list(os.getenv(env_key, "")))
+    if not keys:
+        for env_key in PROVIDER_API_KEY_ENV_ALIASES.get(provider_type, []):
+            keys.extend(_split_key_list(os.getenv(env_key, "")))
     if not keys:
         keys.extend(PROVIDER_API_KEYS_BY_TYPE.get(provider_type, []))
     return list(dict.fromkeys(keys))

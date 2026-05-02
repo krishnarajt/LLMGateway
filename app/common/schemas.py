@@ -80,7 +80,7 @@ class ProviderCreate(BaseModel):
     name: str
     display_name: str
     base_url: Optional[str] = None
-    provider_type: str  # openai | gemini | ollama
+    provider_type: str  # openai | gemini | ollama | groq | huggingface
 
 
 class ProviderUpdate(BaseModel):
@@ -331,6 +331,8 @@ class ChatConfig(BaseModel):
     temperature: Optional[float] = None
     max_output_tokens: Optional[int] = None
     top_p: Optional[float] = None
+    # Include provider-reported thought/reasoning summaries in a separate field.
+    thinking: bool = False
     # Any additional provider-specific params the caller wants to pass through
     extra: Optional[dict] = None
 
@@ -348,6 +350,7 @@ class ChatRequest(BaseModel):
     user_prompt: str
     image_base64: Optional[str] = None
     image_media_type: Optional[str] = "image/png"  # mime type if image is provided
+    thinking: Optional[bool] = None
     config: ChatConfig
 
 
@@ -358,6 +361,7 @@ class ChatResponse(BaseModel):
     model: str
     provider: str
     usage: Optional[dict] = None  # token usage info if available
+    thinking: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

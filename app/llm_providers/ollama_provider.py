@@ -8,6 +8,7 @@ import httpx
 from typing import Optional
 
 from app.llm_providers import LLMProviderBase
+from app.llm_providers.response_utils import normalized_response
 from app.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -33,6 +34,7 @@ class OllamaProvider(LLMProviderBase):
         max_output_tokens: Optional[int] = None,
         top_p: Optional[float] = None,
         extra: Optional[dict] = None,
+        include_thinking: bool = False,
     ) -> dict:
         # Ollama /api/chat format
         messages = []
@@ -83,4 +85,8 @@ class OllamaProvider(LLMProviderBase):
             + (data.get("eval_count") or 0),
         }
 
-        return {"content": content, "usage": usage}
+        return normalized_response(
+            content=content,
+            usage=usage,
+            include_thinking=include_thinking,
+        )
