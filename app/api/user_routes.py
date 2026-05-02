@@ -19,6 +19,8 @@ from app.db.models import (
     GatewayApiKey,
     ApiKeyModelPermission,
     LLMModel,
+    ModelMultiplexFallback,
+    ModelMultiplexRule,
     PermissionRequest,
     PermissionRequestStatus,
     Provider,
@@ -31,6 +33,9 @@ from app.common.schemas import (
     PermissionRequestCreate,
     PermissionRequestOut,
     LLMModelOut,
+    ModelMultiplexRuleOut,
+    ModelMultiplexRuleUpdate,
+    MultiplexModelOut,
 )
 from app.utils.dependencies import require_user
 from app.utils.logging_utils import get_logger
@@ -106,6 +111,7 @@ def list_api_keys(
             perm_out = ApiKeyPermissionOut(
                 id=p.id,
                 model_id=p.model_id,
+                model_identifier=p.model.model_id if p.model else None,
                 model_display_name=p.model.display_name if p.model else None,
                 provider_name=p.model.provider.name
                 if p.model and p.model.provider
@@ -166,6 +172,199 @@ def toggle_api_key(
     api_key.is_active = not api_key.is_active
     db.commit()
     return {"success": True, "is_active": api_key.is_active}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Model Multiplexing
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _model_summary(model: LLMModel) -> MultiplexModelOut:
+    return MultiplexModelOut(
+        id=model.id,
+        model_id=model.model_id,
+        display_name=model.display_name,
+        provider_name=model.provider.name if model.provider else None,
+    )
+
+
+def _active_permissions_for_key(api_key: GatewayApiKey) -> list[ApiKeyModelPermission]:
+    return [
+        perm
+        for perm in api_key.permissions
+        if perm.is_active
+        and perm.model
+        and perm.model.is_active
+        and perm.model.provider
+        and perm.model.provider.is_active
+    ]
+
+
+def _multiplex_rule_to_out(
+    api_key: GatewayApiKey,
+    primary_model: LLMModel,
+    rule: ModelMultiplexRule | None,
+    permitted_model_ids: set[int],
+) -> ModelMultiplexRuleOut:
+    fallback_models = []
+    if rule:
+        for fallback in rule.fallbacks:
+            model = fallback.fallback_model
+            if (
+                model
+                and model.id in permitted_model_ids
+                and model.is_active
+                and model.provider
+                and model.provider.is_active
+            ):
+                fallback_models.append(_model_summary(model))
+
+    return ModelMultiplexRuleOut(
+        api_key_id=api_key.id,
+        api_key_label=api_key.label,
+        key_prefix=api_key.key_prefix,
+        api_key_active=api_key.is_active,
+        primary_model_id=primary_model.id,
+        primary_model_identifier=primary_model.model_id,
+        primary_model_display_name=primary_model.display_name,
+        primary_provider_name=primary_model.provider.name if primary_model.provider else None,
+        enabled=rule.is_enabled if rule else True,
+        fallback_model_ids=[model.id for model in fallback_models],
+        fallback_models=fallback_models,
+    )
+
+
+@router.get("/multiplexing", response_model=List[ModelMultiplexRuleOut])
+def list_model_multiplexing(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """List fallback routing for each model permission on the current user's API keys."""
+    keys = (
+        db.query(GatewayApiKey)
+        .filter(GatewayApiKey.user_id == current_user.id)
+        .order_by(GatewayApiKey.id)
+        .all()
+    )
+
+    result = []
+    for api_key in keys:
+        active_perms = sorted(
+            _active_permissions_for_key(api_key),
+            key=lambda perm: (
+                perm.model.provider.name if perm.model and perm.model.provider else "",
+                perm.model.model_id if perm.model else "",
+            ),
+        )
+        permitted_model_ids = {perm.model_id for perm in active_perms}
+        rules_by_primary = {
+            rule.primary_model_id: rule for rule in api_key.multiplex_rules
+        }
+        for perm in active_perms:
+            result.append(
+                _multiplex_rule_to_out(
+                    api_key=api_key,
+                    primary_model=perm.model,
+                    rule=rules_by_primary.get(perm.model_id),
+                    permitted_model_ids=permitted_model_ids,
+                )
+            )
+    return result
+
+
+@router.put(
+    "/api-keys/{key_id}/multiplexing/{primary_model_id}",
+    response_model=ModelMultiplexRuleOut,
+)
+def update_model_multiplexing(
+    key_id: int,
+    primary_model_id: int,
+    request: ModelMultiplexRuleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """Update ordered fallback models for one API key + primary model pair."""
+    api_key = (
+        db.query(GatewayApiKey)
+        .filter(GatewayApiKey.id == key_id, GatewayApiKey.user_id == current_user.id)
+        .first()
+    )
+    if not api_key:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    active_perms = _active_permissions_for_key(api_key)
+    permissions_by_model_id = {perm.model_id: perm for perm in active_perms}
+    primary_perm = permissions_by_model_id.get(primary_model_id)
+    if not primary_perm:
+        raise HTTPException(
+            status_code=400,
+            detail="This API key does not have active permission for the primary model",
+        )
+
+    fallback_ids = request.fallback_model_ids
+    unique_fallback_ids = list(dict.fromkeys(fallback_ids))
+    if len(unique_fallback_ids) != len(fallback_ids):
+        raise HTTPException(status_code=400, detail="Fallback models must be unique")
+    if primary_model_id in unique_fallback_ids:
+        raise HTTPException(
+            status_code=400, detail="Primary model cannot be its own fallback"
+        )
+
+    inaccessible_ids = [
+        model_id
+        for model_id in unique_fallback_ids
+        if model_id not in permissions_by_model_id
+    ]
+    if inaccessible_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Every fallback model must be an active model that this API key "
+                f"can already access. Invalid model IDs: {inaccessible_ids}"
+            ),
+        )
+
+    rule = (
+        db.query(ModelMultiplexRule)
+        .filter(
+            ModelMultiplexRule.api_key_id == api_key.id,
+            ModelMultiplexRule.primary_model_id == primary_model_id,
+        )
+        .first()
+    )
+    if not rule:
+        rule = ModelMultiplexRule(
+            api_key_id=api_key.id,
+            primary_model_id=primary_model_id,
+        )
+        db.add(rule)
+        db.flush()
+
+    rule.is_enabled = request.enabled
+
+    db.query(ModelMultiplexFallback).filter(
+        ModelMultiplexFallback.rule_id == rule.id
+    ).delete(synchronize_session=False)
+    db.flush()
+
+    for order_index, fallback_model_id in enumerate(unique_fallback_ids):
+        db.add(
+            ModelMultiplexFallback(
+                rule_id=rule.id,
+                fallback_model_id=fallback_model_id,
+                order_index=order_index,
+            )
+        )
+
+    db.commit()
+    db.refresh(rule)
+
+    return _multiplex_rule_to_out(
+        api_key=api_key,
+        primary_model=primary_perm.model,
+        rule=rule,
+        permitted_model_ids=set(permissions_by_model_id.keys()),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

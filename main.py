@@ -66,9 +66,9 @@ async def lifespan(app: FastAPI):
         logger.info("Starting LLM Gateway Backend...")
         logger.info("=" * 60)
 
-        # Initialize database (creates tables + seeds default admin & providers)
+        # Initialize database (runs migrations + seeds default admin & providers)
         try:
-            init_db()
+            init_db(use_alembic=True)
             logger.info("✓ Database initialized successfully")
         except Exception as e:
             logger.critical(f"✗ Failed to initialize database: {e}", exc_info=True)

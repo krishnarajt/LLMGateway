@@ -4,7 +4,15 @@ import hashlib
 import pytest
 from unittest.mock import patch, MagicMock
 
-from app.db.models import GatewayApiKey, ApiKeyModelPermission
+from app.db.models import (
+    GatewayApiKey,
+    ApiKeyModelPermission,
+    LLMModel,
+    ModelMultiplexFallback,
+    ModelMultiplexRule,
+    ProviderApiKey,
+    EnvironmentVariable,
+)
 from app.services.chat_service import (
     resolve_api_key,
     resolve_model,
@@ -133,6 +141,35 @@ class TestGetProviderKey:
         with pytest.raises(ChatServiceError, match="No active API key"):
             get_provider_key(db, gemini_provider)
 
+    def test_get_env_var_backed_provider_keys(self, db, openai_provider):
+        env_var = EnvironmentVariable(
+            key="OPENAI_PRIMARY",
+            encrypted_value=encrypt_value("sk-env-primary"),
+            is_secret=True,
+        )
+        db.add(env_var)
+        db.commit()
+        db.refresh(env_var)
+
+        db.add(
+            ProviderApiKey(
+                provider_id=openai_provider.id,
+                label="primary",
+                env_var_id=env_var.id,
+                order_index=0,
+            )
+        )
+        db.commit()
+
+        assert get_provider_key(db, openai_provider) == "sk-env-primary"
+
+    def test_container_env_used_only_when_no_db_keys(
+        self, db, openai_provider, monkeypatch
+    ):
+        monkeypatch.setenv("OPENAI_API_KEYS", "sk-container-1,sk-container-2")
+
+        assert get_provider_key(db, openai_provider) == "sk-container-1"
+
 
 class TestExecuteChat:
     def test_full_chat_flow(
@@ -182,4 +219,129 @@ class TestExecuteChat:
 
         assert result["content"] == "Hello! I'm a test response."
         assert result["model"] == "gpt-4o"
+        assert result["provider"] == "openai"
+
+    def test_provider_key_rotation_happens_before_model_fallback(
+        self, db, regular_user, gpt4_model, openai_provider, openai_api_key
+    ):
+        raw_key = "gw-provider-key-rotation"
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        gw_key = GatewayApiKey(
+            user_id=regular_user.id,
+            key_hash=key_hash,
+            key_prefix="gw-rot***",
+            label="rotation",
+        )
+        db.add(gw_key)
+        db.commit()
+        db.refresh(gw_key)
+
+        db.add(ApiKeyModelPermission(api_key_id=gw_key.id, model_id=gpt4_model.id))
+        db.add(
+            ProviderApiKey(
+                provider_id=openai_provider.id,
+                label="second-key",
+                encrypted_key=encrypt_value("sk-second-fake-key"),
+            )
+        )
+        db.commit()
+
+        first_provider = MagicMock()
+        first_provider.chat.side_effect = RuntimeError("rate limited")
+        second_provider = MagicMock()
+        second_provider.chat.return_value = {
+            "content": "Recovered with second provider key.",
+            "usage": {"total_tokens": 12},
+        }
+
+        with patch("app.services.chat_service.get_provider_adapter") as mock_adapter:
+            mock_adapter.side_effect = [first_provider, second_provider]
+
+            result = execute_chat(
+                db=db,
+                raw_api_key=raw_key,
+                system_prompt=None,
+                user_prompt="Hello!",
+                image_base64=None,
+                image_media_type="image/png",
+                config=ChatConfig(model="gpt-4o"),
+            )
+
+        assert result["content"] == "Recovered with second provider key."
+        assert result["model"] == "gpt-4o"
+        assert mock_adapter.call_count == 2
+
+    def test_model_fallback_after_all_primary_provider_keys_fail(
+        self, db, regular_user, gpt4_model, openai_provider, openai_api_key
+    ):
+        raw_key = "gw-model-fallback"
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        gw_key = GatewayApiKey(
+            user_id=regular_user.id,
+            key_hash=key_hash,
+            key_prefix="gw-fall***",
+            label="fallback",
+        )
+        fallback_model = LLMModel(
+            provider_id=openai_provider.id,
+            model_id="gpt-4o-mini",
+            display_name="GPT-4o Mini",
+        )
+        db.add_all([gw_key, fallback_model])
+        db.commit()
+        db.refresh(gw_key)
+        db.refresh(fallback_model)
+
+        db.add_all(
+            [
+                ApiKeyModelPermission(
+                    api_key_id=gw_key.id,
+                    model_id=gpt4_model.id,
+                ),
+                ApiKeyModelPermission(
+                    api_key_id=gw_key.id,
+                    model_id=fallback_model.id,
+                ),
+            ]
+        )
+        db.flush()
+        rule = ModelMultiplexRule(
+            api_key_id=gw_key.id,
+            primary_model_id=gpt4_model.id,
+            is_enabled=True,
+        )
+        db.add(rule)
+        db.flush()
+        db.add(
+            ModelMultiplexFallback(
+                rule_id=rule.id,
+                fallback_model_id=fallback_model.id,
+                order_index=0,
+            )
+        )
+        db.commit()
+
+        primary_provider = MagicMock()
+        primary_provider.chat.side_effect = RuntimeError("primary failed")
+        fallback_provider = MagicMock()
+        fallback_provider.chat.return_value = {
+            "content": "Recovered with fallback model.",
+            "usage": {"total_tokens": 18},
+        }
+
+        with patch("app.services.chat_service.get_provider_adapter") as mock_adapter:
+            mock_adapter.side_effect = [primary_provider, fallback_provider]
+
+            result = execute_chat(
+                db=db,
+                raw_api_key=raw_key,
+                system_prompt=None,
+                user_prompt="Hello!",
+                image_base64=None,
+                image_media_type="image/png",
+                config=ChatConfig(model="gpt-4o"),
+            )
+
+        assert result["content"] == "Recovered with fallback model."
+        assert result["model"] == "gpt-4o-mini"
         assert result["provider"] == "openai"

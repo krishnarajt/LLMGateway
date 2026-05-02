@@ -124,6 +124,47 @@ class TestProviderApiKeys:
         )
         assert resp.status_code == 200
 
+    def test_configure_provider_key_routing_from_env_vars(
+        self, client, admin_headers, openai_provider
+    ):
+        primary_resp = client.post(
+            "/api/admin/env-vars",
+            json={
+                "key": "OPENAI_PRIMARY",
+                "value": "sk-primary",
+                "is_secret": True,
+            },
+            headers=admin_headers,
+        )
+        fallback_resp = client.post(
+            "/api/admin/env-vars",
+            json={
+                "key": "OPENAI_FALLBACK",
+                "value": "sk-fallback",
+                "is_secret": True,
+            },
+            headers=admin_headers,
+        )
+
+        resp = client.put(
+            f"/api/admin/providers/{openai_provider.id}/api-key-routing",
+            json={
+                "env_var_ids": [
+                    primary_resp.json()["id"],
+                    fallback_resp.json()["id"],
+                ]
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 200
+        keys = resp.json()
+        assert [key["env_var_key"] for key in keys] == [
+            "OPENAI_PRIMARY",
+            "OPENAI_FALLBACK",
+        ]
+        assert [key["order_index"] for key in keys] == [0, 1]
+        assert all(key["source"] == "env_var" for key in keys)
+
 
 class TestModelManagement:
     def test_create_model(self, client, admin_headers, openai_provider):

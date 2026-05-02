@@ -37,18 +37,31 @@ def get_db():
         db.close()
 
 
-def init_db():
-    """Create schema, tables, and seed default data."""
+def init_db(use_alembic: bool = False):
+    """
+    Initialize the database and seed default data.
+
+    Production startup should pass use_alembic=True so every schema change is
+    applied through versioned migrations. create_all() remains as a quick local
+    fallback for tests or ad-hoc development only.
+    """
     # Step 1: Create schema in its own committed transaction
     with engine.connect() as conn:
         if DB_SCHEMA != "public":
             conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{DB_SCHEMA}"'))
             conn.commit()
 
-    # Step 2: Now create tables (schema already exists)
-    Base.metadata.create_all(bind=engine)
+    if use_alembic:
+        from alembic import command
+        from alembic.config import Config
 
-    # Step 3: Seed default data
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Database migrated via Alembic")
+    else:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created via create_all()")
+
     _seed_defaults()
 
 

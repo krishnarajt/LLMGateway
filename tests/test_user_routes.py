@@ -1,5 +1,7 @@
 """Tests for user routes — API key management, permission requests."""
 
+from app.db.models import ApiKeyModelPermission, LLMModel
+
 
 class TestGatewayApiKeys:
     def test_create_api_key(self, client, user_headers):
@@ -198,3 +200,85 @@ class TestAvailableModels:
         models = resp.json()
         assert len(models) >= 1
         assert any(m["model_id"] == "gpt-4o" for m in models)
+
+
+class TestModelMultiplexing:
+    def test_update_and_list_multiplexing_rules(
+        self, client, user_headers, db, regular_user, gpt4_model, openai_provider
+    ):
+        key_resp = client.post(
+            "/api/user/api-keys",
+            json={"label": "mux-test"},
+            headers=user_headers,
+        )
+        key_id = key_resp.json()["id"]
+
+        fallback_model = LLMModel(
+            provider_id=openai_provider.id,
+            model_id="gpt-4o-mini",
+            display_name="GPT-4o Mini",
+        )
+        db.add(fallback_model)
+        db.commit()
+        db.refresh(fallback_model)
+
+        db.add_all(
+            [
+                ApiKeyModelPermission(api_key_id=key_id, model_id=gpt4_model.id),
+                ApiKeyModelPermission(
+                    api_key_id=key_id,
+                    model_id=fallback_model.id,
+                ),
+            ]
+        )
+        db.commit()
+
+        list_resp = client.get("/api/user/multiplexing", headers=user_headers)
+        assert list_resp.status_code == 200
+        routes = list_resp.json()
+        primary_route = [
+            route
+            for route in routes
+            if route["api_key_id"] == key_id
+            and route["primary_model_id"] == gpt4_model.id
+        ][0]
+        assert primary_route["enabled"] is True
+        assert primary_route["fallback_model_ids"] == []
+
+        update_resp = client.put(
+            f"/api/user/api-keys/{key_id}/multiplexing/{gpt4_model.id}",
+            json={"enabled": True, "fallback_model_ids": [fallback_model.id]},
+            headers=user_headers,
+        )
+        assert update_resp.status_code == 200
+        data = update_resp.json()
+        assert data["fallback_model_ids"] == [fallback_model.id]
+        assert data["fallback_models"][0]["model_id"] == "gpt-4o-mini"
+
+    def test_fallback_must_be_accessible_to_api_key(
+        self, client, user_headers, db, gpt4_model, openai_provider
+    ):
+        key_resp = client.post(
+            "/api/user/api-keys",
+            json={"label": "mux-reject"},
+            headers=user_headers,
+        )
+        key_id = key_resp.json()["id"]
+
+        inaccessible_model = LLMModel(
+            provider_id=openai_provider.id,
+            model_id="gpt-4.1",
+            display_name="GPT-4.1",
+        )
+        db.add(inaccessible_model)
+        db.commit()
+        db.refresh(inaccessible_model)
+        db.add(ApiKeyModelPermission(api_key_id=key_id, model_id=gpt4_model.id))
+        db.commit()
+
+        resp = client.put(
+            f"/api/user/api-keys/{key_id}/multiplexing/{gpt4_model.id}",
+            json={"enabled": True, "fallback_model_ids": [inaccessible_model.id]},
+            headers=user_headers,
+        )
+        assert resp.status_code == 400

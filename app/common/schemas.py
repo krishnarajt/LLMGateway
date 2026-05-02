@@ -5,7 +5,7 @@ Pydantic schemas for request/response validation across all API routes.
 from __future__ import annotations
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
@@ -113,10 +113,18 @@ class ProviderApiKeyCreate(BaseModel):
     api_key: str  # plaintext — will be encrypted before storage
 
 
+class ProviderApiKeyRoutingUpdate(BaseModel):
+    env_var_ids: List[int] = Field(default_factory=list)
+
+
 class ProviderApiKeyOut(BaseModel):
     id: int
     provider_id: int
     label: str
+    env_var_id: Optional[int] = None
+    env_var_key: Optional[str] = None
+    source: str = "direct"
+    order_index: int = 0
     is_active: bool
     created_at: Optional[datetime]
     # Never expose the actual key — only metadata
@@ -172,7 +180,7 @@ class GatewayApiKeyOut(BaseModel):
     is_active: bool
     created_at: Optional[datetime]
     last_used_at: Optional[datetime]
-    permissions: List[ApiKeyPermissionOut] = []
+    permissions: List[ApiKeyPermissionOut] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -190,6 +198,7 @@ class GatewayApiKeyCreated(BaseModel):
 class ApiKeyPermissionOut(BaseModel):
     id: int
     model_id: int
+    model_identifier: Optional[str] = None
     model_display_name: Optional[str] = None
     provider_name: Optional[str] = None
     max_input_tokens: Optional[int]
@@ -202,6 +211,37 @@ class ApiKeyPermissionOut(BaseModel):
 
 # Fix forward reference
 GatewayApiKeyOut.model_rebuild()
+
+
+# ---------------------------------------------------------------------------
+# Model Multiplexing
+# ---------------------------------------------------------------------------
+
+
+class MultiplexModelOut(BaseModel):
+    id: int
+    model_id: str
+    display_name: str
+    provider_name: Optional[str] = None
+
+
+class ModelMultiplexRuleOut(BaseModel):
+    api_key_id: int
+    api_key_label: str
+    key_prefix: str
+    api_key_active: bool
+    primary_model_id: int
+    primary_model_identifier: str
+    primary_model_display_name: str
+    primary_provider_name: Optional[str] = None
+    enabled: bool = True
+    fallback_model_ids: List[int] = Field(default_factory=list)
+    fallback_models: List[MultiplexModelOut] = Field(default_factory=list)
+
+
+class ModelMultiplexRuleUpdate(BaseModel):
+    enabled: bool = True
+    fallback_model_ids: List[int] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,6 @@ COPY pyproject.toml uv.lock ./
 # Install prod dependencies only (no dev, no project code yet)
 RUN uv sync --frozen --no-install-project --no-dev
 
-
 # ── dev: mounts code via volume, runs with reload ─────────────
 FROM base AS dev
 

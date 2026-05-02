@@ -34,6 +34,7 @@ from app.common.schemas import (
     ProviderUpdate,
     ProviderOut,
     ProviderApiKeyCreate,
+    ProviderApiKeyRoutingUpdate,
     ProviderApiKeyOut,
     LLMModelCreate,
     LLMModelUpdate,
@@ -174,21 +175,27 @@ def admin_delete_provider(provider_id: int, db: Session = Depends(get_db)):
 def admin_add_provider_api_key(
     request: ProviderApiKeyCreate, db: Session = Depends(get_db)
 ):
-    """Add an encrypted API key for a provider."""
+    """Add a legacy direct encrypted API key for a provider."""
     provider = db.query(Provider).filter(Provider.id == request.provider_id).first()
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")
 
+    next_order_index = (
+        db.query(ProviderApiKey)
+        .filter(ProviderApiKey.provider_id == request.provider_id)
+        .count()
+    )
     encrypted = encrypt_value(request.api_key)
     key_obj = ProviderApiKey(
         provider_id=request.provider_id,
         label=request.label,
         encrypted_key=encrypted,
+        order_index=next_order_index,
     )
     db.add(key_obj)
     db.commit()
     db.refresh(key_obj)
-    return ProviderApiKeyOut.model_validate(key_obj)
+    return _provider_api_key_to_out(key_obj)
 
 
 @router.get("/provider-api-keys/{provider_id}", response_model=List[ProviderApiKeyOut])
@@ -197,10 +204,81 @@ def admin_list_provider_api_keys(provider_id: int, db: Session = Depends(get_db)
     keys = (
         db.query(ProviderApiKey)
         .filter(ProviderApiKey.provider_id == provider_id)
-        .order_by(ProviderApiKey.id)
+        .order_by(ProviderApiKey.order_index, ProviderApiKey.id)
         .all()
     )
-    return [ProviderApiKeyOut.model_validate(k) for k in keys]
+    return [_provider_api_key_to_out(k) for k in keys]
+
+
+@router.put(
+    "/providers/{provider_id}/api-key-routing",
+    response_model=List[ProviderApiKeyOut],
+)
+def admin_update_provider_api_key_routing(
+    provider_id: int,
+    request: ProviderApiKeyRoutingUpdate,
+    db: Session = Depends(get_db),
+):
+    """
+    Replace a provider's ordered API-key routing with Env Var backed rows.
+    The first env var is primary; remaining env vars are fallbacks in order.
+    """
+    provider = db.query(Provider).filter(Provider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    env_var_ids = request.env_var_ids
+    unique_env_var_ids = list(dict.fromkeys(env_var_ids))
+    if len(unique_env_var_ids) != len(env_var_ids):
+        raise HTTPException(status_code=400, detail="Env var selections must be unique")
+
+    env_vars = []
+    if unique_env_var_ids:
+        env_vars = (
+            db.query(EnvironmentVariable)
+            .filter(EnvironmentVariable.id.in_(unique_env_var_ids))
+            .all()
+        )
+        found_ids = {env_var.id for env_var in env_vars}
+        missing_ids = [
+            env_var_id
+            for env_var_id in unique_env_var_ids
+            if env_var_id not in found_ids
+        ]
+        if missing_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown environment variable IDs: {missing_ids}",
+            )
+        env_vars_by_id = {env_var.id: env_var for env_var in env_vars}
+        env_vars = [env_vars_by_id[env_var_id] for env_var_id in unique_env_var_ids]
+
+    db.query(ProviderApiKey).filter(ProviderApiKey.provider_id == provider_id).delete(
+        synchronize_session=False
+    )
+    db.flush()
+
+    for order_index, env_var in enumerate(env_vars):
+        label = "primary" if order_index == 0 else f"fallback-{order_index}"
+        db.add(
+            ProviderApiKey(
+                provider_id=provider_id,
+                label=label,
+                env_var_id=env_var.id,
+                order_index=order_index,
+                is_active=True,
+            )
+        )
+
+    db.commit()
+
+    keys = (
+        db.query(ProviderApiKey)
+        .filter(ProviderApiKey.provider_id == provider_id)
+        .order_by(ProviderApiKey.order_index, ProviderApiKey.id)
+        .all()
+    )
+    return [_provider_api_key_to_out(key) for key in keys]
 
 
 @router.delete("/provider-api-keys/{key_id}")
@@ -223,6 +301,21 @@ def admin_toggle_provider_api_key(key_id: int, db: Session = Depends(get_db)):
     key_obj.is_active = not key_obj.is_active
     db.commit()
     return {"success": True, "is_active": key_obj.is_active}
+
+
+def _provider_api_key_to_out(key_obj: ProviderApiKey) -> ProviderApiKeyOut:
+    """Convert a provider key row without exposing secret values."""
+    return ProviderApiKeyOut(
+        id=key_obj.id,
+        provider_id=key_obj.provider_id,
+        label=key_obj.label,
+        env_var_id=key_obj.env_var_id,
+        env_var_key=key_obj.env_var.key if key_obj.env_var else None,
+        source="env_var" if key_obj.env_var_id else "direct",
+        order_index=key_obj.order_index,
+        is_active=key_obj.is_active,
+        created_at=key_obj.created_at,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
