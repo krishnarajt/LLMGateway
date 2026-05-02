@@ -2,6 +2,7 @@
 
 import hashlib
 import pytest
+import httpx
 from unittest.mock import patch, MagicMock
 
 from app.db.models import (
@@ -22,6 +23,7 @@ from app.services.chat_service import (
     get_provider_adapter,
     ChatServiceError,
     execute_chat,
+    _failure_message,
 )
 from app.common.schemas import ChatConfig
 from app.llm_providers.gemini_provider import GeminiProvider
@@ -277,6 +279,17 @@ class TestProviderAdapters:
             provider.chat(
                 model_id="llama-3.3-70b-versatile",
                 user_prompt="Hello",
+            )
+
+        payload = mock_post.call_args.kwargs["json"]
+        assert "include_reasoning" not in payload
+        assert "reasoning_format" not in payload
+
+        with patch("app.llm_providers.openai_provider.httpx.post") as mock_post:
+            mock_post.return_value = response
+            provider.chat(
+                model_id="qwen/qwen3-32b",
+                user_prompt="Hello",
                 extra={"reasoning_format": "raw"},
             )
 
@@ -287,13 +300,40 @@ class TestProviderAdapters:
         with patch("app.llm_providers.openai_provider.httpx.post") as mock_post:
             mock_post.return_value = response
             provider.chat(
-                model_id="llama-3.3-70b-versatile",
+                model_id="openai/gpt-oss-20b",
                 user_prompt="Hello",
                 include_thinking=True,
             )
 
         payload = mock_post.call_args.kwargs["json"]
         assert payload["include_reasoning"] is True
+
+        with patch("app.llm_providers.openai_provider.httpx.post") as mock_post:
+            mock_post.return_value = response
+            provider.chat(
+                model_id="llama-3.3-70b-versatile",
+                user_prompt="Hello",
+                include_thinking=True,
+            )
+
+        payload = mock_post.call_args.kwargs["json"]
+        assert "include_reasoning" not in payload
+
+    def test_failure_message_includes_provider_response_body(self):
+        request = httpx.Request(
+            "POST", "https://api.groq.com/openai/v1/chat/completions"
+        )
+        response = httpx.Response(
+            400,
+            request=request,
+            json={"error": {"message": "Unsupported parameter: include_reasoning"}},
+        )
+        exc = httpx.HTTPStatusError("bad request", request=request, response=response)
+
+        message = _failure_message(exc)
+
+        assert "returned 400" in message
+        assert "Unsupported parameter" in message
 
     def test_gemini_skips_thought_parts_by_default(self):
         provider = GeminiProvider(api_key="test-key")

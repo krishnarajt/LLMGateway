@@ -9,7 +9,19 @@ class GroqProvider(OpenAIProvider):
     def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1"):
         super().__init__(api_key=api_key, base_url=base_url)
 
-    def _apply_thinking_options(self, payload: dict, include_thinking: bool) -> None:
+    @staticmethod
+    def _supports_reasoning_controls(model_id: str | None) -> bool:
+        if not model_id:
+            return False
+        normalized = model_id.lower()
+        return normalized.startswith(("openai/gpt-oss-", "qwen/qwen3-"))
+
+    def _apply_thinking_options(
+        self, payload: dict, include_thinking: bool, model_id: str | None = None
+    ) -> None:
+        if not self._supports_reasoning_controls(model_id):
+            return
+
         if include_thinking:
             if "reasoning_format" not in payload:
                 payload.setdefault("include_reasoning", True)

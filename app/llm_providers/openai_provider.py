@@ -25,7 +25,9 @@ class OpenAIProvider(LLMProviderBase):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
 
-    def _apply_thinking_options(self, payload: dict, include_thinking: bool) -> None:
+    def _apply_thinking_options(
+        self, payload: dict, include_thinking: bool, model_id: str | None = None
+    ) -> None:
         """Let provider subclasses request/disable separate reasoning output."""
         if include_thinking:
             return
@@ -81,7 +83,7 @@ class OpenAIProvider(LLMProviderBase):
         # Merge any extra provider-specific params
         if extra:
             payload.update(extra)
-        self._apply_thinking_options(payload, include_thinking)
+        self._apply_thinking_options(payload, include_thinking, model_id)
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",

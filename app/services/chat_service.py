@@ -229,7 +229,9 @@ def _failure_message(exc: Exception) -> str:
         response = exc.response
         method = exc.request.method if exc.request else "HTTP"
         url = str(exc.request.url) if exc.request else ""
-        return f"{method} {url} returned {response.status_code}"
+        response_text = response.text.strip()
+        detail = f": {response_text[:500]}" if response_text else ""
+        return f"{method} {url} returned {response.status_code}{detail}"
     return str(exc) or exc.__class__.__name__
 
 
