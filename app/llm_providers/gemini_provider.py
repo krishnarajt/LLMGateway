@@ -5,6 +5,7 @@ Supports text and vision (image) inputs.
 """
 
 import httpx
+import time
 from typing import Optional
 
 from app.llm_providers import LLMProviderBase
@@ -14,6 +15,9 @@ from app.utils.logging_utils import get_logger
 logger = get_logger(__name__)
 
 _TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+_RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
+_MAX_RETRIES = 2
+_RETRY_BACKOFF_SECONDS = 0.5
 
 
 class GeminiProvider(LLMProviderBase):
@@ -88,6 +92,9 @@ class GeminiProvider(LLMProviderBase):
         )
         if include_thinking:
             thinking_config["includeThoughts"] = True
+            # Gemma 4 docs require thinking to be enabled via thinkingLevel.
+            if model_id.startswith("gemma-4-"):
+                thinking_config.setdefault("thinkingLevel", "high")
         elif "includeThoughts" in thinking_config:
             thinking_config["includeThoughts"] = False
         if thinking_config:
@@ -103,14 +110,44 @@ class GeminiProvider(LLMProviderBase):
 
         logger.info(f"Gemini request: model={model_id}")
 
-        resp = httpx.post(
-            url,
-            json=payload,
-            params=params,
-            timeout=_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                resp = httpx.post(
+                    url,
+                    json=payload,
+                    params=params,
+                    timeout=_TIMEOUT,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                break
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                status_code = exc.response.status_code
+                if (
+                    status_code not in _RETRYABLE_STATUS_CODES
+                    or attempt >= _MAX_RETRIES
+                ):
+                    raise
+                logger.warning(
+                    "Gemini transient HTTP error, retrying: "
+                    f"model={model_id}, status={status_code}, "
+                    f"attempt={attempt + 1}/{_MAX_RETRIES + 1}"
+                )
+            except httpx.RequestError as exc:
+                last_exc = exc
+                if attempt >= _MAX_RETRIES:
+                    raise
+                logger.warning(
+                    "Gemini transport error, retrying: "
+                    f"model={model_id}, error={exc.__class__.__name__}, "
+                    f"attempt={attempt + 1}/{_MAX_RETRIES + 1}"
+                )
+
+            time.sleep(_RETRY_BACKOFF_SECONDS * (2**attempt))
+        else:
+            raise last_exc or RuntimeError("Gemini request failed without exception")
 
         # Parse the response
         candidates = data.get("candidates", [])

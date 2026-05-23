@@ -396,6 +396,65 @@ class TestProviderAdapters:
         assert result["content"] == "Final answer."
         assert result["thinking"] == "private summary"
 
+    def test_gemma4_sets_thinking_level_when_thinking_requested(self):
+        provider = GeminiProvider(api_key="test-key")
+        response = FakeLLMResponse(
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {"text": "private summary", "thought": True},
+                                {"text": "Final answer."},
+                            ]
+                        }
+                    }
+                ]
+            }
+        )
+
+        with patch("app.llm_providers.gemini_provider.httpx.post") as mock_post:
+            mock_post.return_value = response
+            provider.chat(
+                model_id="gemma-4-31b-it",
+                user_prompt="Hello",
+                include_thinking=True,
+            )
+
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["generationConfig"]["thinkingConfig"]["includeThoughts"] is True
+        assert payload["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "high"
+
+    def test_gemini_retries_transient_http_errors(self):
+        provider = GeminiProvider(api_key="test-key")
+        request = httpx.Request("POST", "https://generativelanguage.googleapis.com")
+        transient_response = httpx.Response(
+            500,
+            request=request,
+            json={"error": {"message": "Internal error encountered."}},
+        )
+        success_response = FakeLLMResponse(
+            {
+                "candidates": [
+                    {"content": {"parts": [{"text": "Recovered response."}]}}
+                ]
+            }
+        )
+
+        with patch("app.llm_providers.gemini_provider.time.sleep") as mock_sleep:
+            with patch("app.llm_providers.gemini_provider.httpx.post") as mock_post:
+                mock_post.side_effect = [
+                    httpx.HTTPStatusError(
+                        "internal error", request=request, response=transient_response
+                    ),
+                    success_response,
+                ]
+                result = provider.chat(model_id="gemini-test", user_prompt="Hello")
+
+        assert result["content"] == "Recovered response."
+        assert mock_post.call_count == 2
+        mock_sleep.assert_called_once()
+
 
 class TestExecuteChat:
     def test_full_chat_flow(
