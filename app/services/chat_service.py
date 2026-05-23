@@ -11,6 +11,7 @@ Flow:
 """
 
 import hashlib
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -242,6 +243,14 @@ def _provider_attempt_status(failures: list[tuple[int | None, str]]) -> int:
     return 502
 
 
+def _key_fingerprint(api_key: str) -> str:
+    if not api_key:
+        return "none"
+    if len(api_key) <= 8:
+        return f"{api_key[:2]}***"
+    return f"{api_key[:4]}***{api_key[-4:]}"
+
+
 def _call_model_with_provider_keys(
     db: Session,
     api_key_obj: GatewayApiKey,
@@ -252,6 +261,9 @@ def _call_model_with_provider_keys(
     image_base64: Optional[str],
     image_media_type: str,
     config: ChatConfig,
+    trace_id: str,
+    model_attempt: int,
+    total_model_attempts: int,
 ) -> dict:
     provider = model.provider
     try:
@@ -267,13 +279,21 @@ def _call_model_with_provider_keys(
     failures: list[tuple[int | None, str]] = []
 
     for key_index, provider_api_key in enumerate(provider_keys, start=1):
+        key_fingerprint = _key_fingerprint(provider_api_key)
         try:
             adapter = get_provider_adapter(provider, provider_api_key)
             logger.info(
-                f"Chat request: user_key={api_key_obj.key_prefix}, "
-                f"model={model.model_id}, provider={provider.name}, "
-                f"provider_key_attempt={key_index}/{len(provider_keys)}"
+                "Provider key attempt starting: "
+                f"trace_id={trace_id}, user_key={api_key_obj.key_prefix}, "
+                f"requested_model={config.model}, active_model={model.model_id}, "
+                f"model_attempt={model_attempt}/{total_model_attempts}, "
+                f"provider={provider.name}, "
+                f"provider_key_attempt={key_index}/{len(provider_keys)}, "
+                f"provider_key={key_fingerprint}, "
+                "scope=provider_key_rotation"
             )
+            extra = dict(config.extra or {})
+            extra["_gateway_trace_id"] = trace_id
             return adapter.chat(
                 model_id=model.model_id,
                 system_prompt=system_prompt,
@@ -283,7 +303,7 @@ def _call_model_with_provider_keys(
                 temperature=config.temperature,
                 max_output_tokens=effective_max_output,
                 top_p=config.top_p,
-                extra=config.extra,
+                extra=extra,
                 include_thinking=config.thinking,
             )
         except Exception as exc:
@@ -291,16 +311,30 @@ def _call_model_with_provider_keys(
             message = _failure_message(exc)
             failures.append((status_code, message))
             logger.warning(
-                f"Provider attempt failed: user_key={api_key_obj.key_prefix}, "
-                f"model={model.model_id}, provider={provider.name}, "
+                "Provider key attempt failed: "
+                f"trace_id={trace_id}, user_key={api_key_obj.key_prefix}, "
+                f"requested_model={config.model}, active_model={model.model_id}, "
+                f"model_attempt={model_attempt}/{total_model_attempts}, "
+                f"provider={provider.name}, "
                 f"provider_key_attempt={key_index}/{len(provider_keys)}, "
-                f"error={message}"
+                f"provider_key={key_fingerprint}, "
+                f"next_step={'rotate_to_next_provider_key' if key_index < len(provider_keys) else 'provider_keys_exhausted'}, "
+                f"scope=provider_key_rotation, error={message}"
             )
 
     failure_lines = [
         f"{provider.name}/{model.model_id} key#{index}: {message}"
         for index, (_, message) in enumerate(failures, start=1)
     ]
+    logger.warning(
+        "All provider keys exhausted for model attempt: "
+        f"trace_id={trace_id}, user_key={api_key_obj.key_prefix}, "
+        f"requested_model={config.model}, active_model={model.model_id}, "
+        f"model_attempt={model_attempt}/{total_model_attempts}, "
+        f"provider={provider.name}, total_provider_keys={len(provider_keys)}, "
+        f"next_step={'try_model_fallback' if model_attempt < total_model_attempts else 'fail_request'}, "
+        "scope=provider_key_rotation"
+    )
     raise ProviderAttemptFailure(
         model=model,
         failures=failure_lines,
@@ -399,16 +433,37 @@ def execute_chat(
 
     # Step 3: Check permission
     perm = check_permission(db, api_key_obj, model)
+    trace_id = uuid.uuid4().hex[:12]
 
     failures = []
     attempts: list[tuple[LLMModel, ApiKeyModelPermission]] = [(model, perm)]
     attempts.extend(_configured_fallbacks(db, api_key_obj, model))
+    total_model_attempts = len(attempts)
+
+    logger.info(
+        "Chat execution plan: "
+        f"trace_id={trace_id}, user_key={api_key_obj.key_prefix}, "
+        f"requested_model={config.model}, total_model_attempts={total_model_attempts}, "
+        f"fallback_models={[attempt_model.model_id for attempt_model, _ in attempts[1:]]}"
+    )
 
     for attempt_index, (attempt_model, attempt_perm) in enumerate(attempts):
-        if attempt_index > 0:
+        model_attempt = attempt_index + 1
+        if attempt_index == 0:
             logger.info(
-                f"Model multiplexing fallback: user_key={api_key_obj.key_prefix}, "
-                f"requested_model={model.model_id}, fallback_model={attempt_model.model_id}"
+                "Model attempt starting: "
+                f"trace_id={trace_id}, user_key={api_key_obj.key_prefix}, "
+                f"requested_model={config.model}, active_model={attempt_model.model_id}, "
+                f"model_attempt={model_attempt}/{total_model_attempts}, "
+                "scope=model_selection, reason=primary_request"
+            )
+        else:
+            logger.info(
+                "Model fallback activated: "
+                f"trace_id={trace_id}, user_key={api_key_obj.key_prefix}, "
+                f"requested_model={model.model_id}, fallback_model={attempt_model.model_id}, "
+                f"model_attempt={model_attempt}/{total_model_attempts}, "
+                "scope=model_selection, reason=all_provider_keys_failed_for_previous_model"
             )
 
         try:
@@ -422,6 +477,16 @@ def execute_chat(
                 image_base64=image_base64,
                 image_media_type=image_media_type,
                 config=config,
+                trace_id=trace_id,
+                model_attempt=model_attempt,
+                total_model_attempts=total_model_attempts,
+            )
+            logger.info(
+                "Chat execution succeeded: "
+                f"trace_id={trace_id}, user_key={api_key_obj.key_prefix}, "
+                f"requested_model={config.model}, resolved_model={attempt_model.model_id}, "
+                f"provider={attempt_model.provider.name}, "
+                f"model_attempt={model_attempt}/{total_model_attempts}"
             )
             response = {
                 "content": result["content"],
@@ -434,7 +499,20 @@ def execute_chat(
             return response
         except ProviderAttemptFailure as failure:
             failures.append(failure)
+            logger.warning(
+                "Model attempt failed: "
+                f"trace_id={trace_id}, user_key={api_key_obj.key_prefix}, "
+                f"requested_model={config.model}, failed_model={attempt_model.model_id}, "
+                f"model_attempt={model_attempt}/{total_model_attempts}, "
+                f"next_step={'try_model_fallback' if model_attempt < total_model_attempts else 'fail_request'}, "
+                "scope=model_selection"
+            )
 
+    logger.error(
+        "Chat execution failed after exhausting provider keys and model fallbacks: "
+        f"trace_id={trace_id}, user_key={api_key_obj.key_prefix}, "
+        f"requested_model={config.model}, total_model_attempts={total_model_attempts}"
+    )
     raise ChatServiceError(
         _format_failures(config.model, failures),
         status_code=_final_failure_status(failures),

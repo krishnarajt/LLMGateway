@@ -20,6 +20,14 @@ _MAX_RETRIES = 2
 _RETRY_BACKOFF_SECONDS = 0.5
 
 
+def _key_fingerprint(api_key: str) -> str:
+    if not api_key:
+        return "none"
+    if len(api_key) <= 8:
+        return f"{api_key[:2]}***"
+    return f"{api_key[:4]}***{api_key[-4:]}"
+
+
 class GeminiProvider(LLMProviderBase):
     def __init__(
         self, api_key: str, base_url: str = "https://generativelanguage.googleapis.com"
@@ -107,12 +115,28 @@ class GeminiProvider(LLMProviderBase):
 
         url = f"{self.base_url}/v1beta/models/{model_id}:generateContent"
         params = {"key": self.api_key}
+        trace_id = None
+        if extra:
+            trace_id = extra.get("_gateway_trace_id")
+        key_fingerprint = _key_fingerprint(self.api_key)
 
-        logger.info(f"Gemini request: model={model_id}")
+        logger.info(
+            "Gemini request starting: "
+            f"trace_id={trace_id}, model={model_id}, "
+            f"provider_key={key_fingerprint}, url={url}, "
+            f"internal_retries={_MAX_RETRIES + 1}"
+        )
 
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
             try:
+                logger.info(
+                    "Gemini HTTP attempt: "
+                    f"trace_id={trace_id}, model={model_id}, "
+                    f"provider_key={key_fingerprint}, "
+                    f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
+                    "scope=same_provider_key_retry"
+                )
                 resp = httpx.post(
                     url,
                     json=payload,
@@ -121,6 +145,13 @@ class GeminiProvider(LLMProviderBase):
                 )
                 resp.raise_for_status()
                 data = resp.json()
+                logger.info(
+                    "Gemini HTTP attempt succeeded: "
+                    f"trace_id={trace_id}, model={model_id}, "
+                    f"provider_key={key_fingerprint}, "
+                    f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
+                    "scope=same_provider_key_retry"
+                )
                 break
             except httpx.HTTPStatusError as exc:
                 last_exc = exc
@@ -129,20 +160,40 @@ class GeminiProvider(LLMProviderBase):
                     status_code not in _RETRYABLE_STATUS_CODES
                     or attempt >= _MAX_RETRIES
                 ):
+                    logger.warning(
+                        "Gemini HTTP attempt failed without further same-key retries: "
+                        f"trace_id={trace_id}, model={model_id}, "
+                        f"provider_key={key_fingerprint}, status={status_code}, "
+                        f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
+                        "scope=same_provider_key_retry"
+                    )
                     raise
                 logger.warning(
-                    "Gemini transient HTTP error, retrying: "
-                    f"model={model_id}, status={status_code}, "
-                    f"attempt={attempt + 1}/{_MAX_RETRIES + 1}"
+                    "Gemini transient HTTP error, retrying same provider key: "
+                    f"trace_id={trace_id}, model={model_id}, "
+                    f"provider_key={key_fingerprint}, status={status_code}, "
+                    f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
+                    "scope=same_provider_key_retry"
                 )
             except httpx.RequestError as exc:
                 last_exc = exc
                 if attempt >= _MAX_RETRIES:
+                    logger.warning(
+                        "Gemini transport error failed without further same-key retries: "
+                        f"trace_id={trace_id}, model={model_id}, "
+                        f"provider_key={key_fingerprint}, "
+                        f"error={exc.__class__.__name__}, "
+                        f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
+                        "scope=same_provider_key_retry"
+                    )
                     raise
                 logger.warning(
-                    "Gemini transport error, retrying: "
-                    f"model={model_id}, error={exc.__class__.__name__}, "
-                    f"attempt={attempt + 1}/{_MAX_RETRIES + 1}"
+                    "Gemini transport error, retrying same provider key: "
+                    f"trace_id={trace_id}, model={model_id}, "
+                    f"provider_key={key_fingerprint}, "
+                    f"error={exc.__class__.__name__}, "
+                    f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
+                    "scope=same_provider_key_retry"
                 )
 
             time.sleep(_RETRY_BACKOFF_SECONDS * (2**attempt))
