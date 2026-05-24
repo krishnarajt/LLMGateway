@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: app
-          image: ghcr.io/krishnarajt/llmgateway:git-1aeef52f59db0c1d96a49ebae7d5440211b8e9bb
+          image: ghcr.io/krishnarajt/llmgateway:git-af0cc415b055f71bb45466467fd65a7a87eafdc8
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
