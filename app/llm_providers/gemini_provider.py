@@ -28,6 +28,17 @@ def _key_fingerprint(api_key: str) -> str:
     return f"{api_key[:4]}***{api_key[-4:]}"
 
 
+def _sanitize_extra_payload(extra: Optional[dict]) -> dict:
+    """Drop internal gateway metadata before forwarding provider extras."""
+    if not extra:
+        return {}
+    return {
+        key: value
+        for key, value in extra.items()
+        if not str(key).startswith("_gateway_")
+    }
+
+
 class GeminiProvider(LLMProviderBase):
     def __init__(
         self, api_key: str, base_url: str = "https://generativelanguage.googleapis.com"
@@ -86,7 +97,7 @@ class GeminiProvider(LLMProviderBase):
         if top_p is not None:
             generation_config["topP"] = top_p
 
-        extra_payload = dict(extra or {})
+        extra_payload = _sanitize_extra_payload(extra)
         extra_generation_config = extra_payload.pop(
             "generationConfig", extra_payload.pop("generation_config", None)
         )
