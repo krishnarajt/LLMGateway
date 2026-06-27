@@ -270,25 +270,6 @@ class TestProviderAdapters:
         assert "separate reasoning" in result["thinking"]
         assert "inline reasoning" in result["thinking"]
 
-    def test_openai_compatible_adapter_does_not_forward_gateway_internal_extra(self):
-        provider = OpenAIProvider(api_key="sk-test", base_url="https://example.test/v1")
-        response = FakeLLMResponse({"choices": [{"message": {"content": "Done"}}]})
-
-        with patch("app.llm_providers.openai_provider.httpx.post") as mock_post:
-            mock_post.return_value = response
-            provider.chat(
-                model_id="test-model",
-                user_prompt="Hello",
-                extra={
-                    "_gateway_trace_id": "trace-123",
-                    "reasoning_format": "raw",
-                },
-            )
-
-        payload = mock_post.call_args.kwargs["json"]
-        assert "_gateway_trace_id" not in payload
-        assert payload["reasoning_format"] == "hidden"
-
     def test_groq_controls_reasoning_payload(self):
         provider = GroqProvider(api_key="gsk-test")
         response = FakeLLMResponse({"choices": [{"message": {"content": "Done"}}]})
@@ -414,90 +395,6 @@ class TestProviderAdapters:
         assert payload["generationConfig"]["thinkingConfig"]["includeThoughts"] is True
         assert result["content"] == "Final answer."
         assert result["thinking"] == "private summary"
-
-    def test_gemma4_sets_thinking_level_when_thinking_requested(self):
-        provider = GeminiProvider(api_key="test-key")
-        response = FakeLLMResponse(
-            {
-                "candidates": [
-                    {
-                        "content": {
-                            "parts": [
-                                {"text": "private summary", "thought": True},
-                                {"text": "Final answer."},
-                            ]
-                        }
-                    }
-                ]
-            }
-        )
-
-        with patch("app.llm_providers.gemini_provider.httpx.post") as mock_post:
-            mock_post.return_value = response
-            provider.chat(
-                model_id="gemma-4-31b-it",
-                user_prompt="Hello",
-                include_thinking=True,
-            )
-
-        payload = mock_post.call_args.kwargs["json"]
-        assert payload["generationConfig"]["thinkingConfig"]["includeThoughts"] is True
-        assert payload["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "high"
-
-    def test_gemini_does_not_forward_gateway_internal_extra(self):
-        provider = GeminiProvider(api_key="test-key")
-        response = FakeLLMResponse(
-            {
-                "candidates": [
-                    {"content": {"parts": [{"text": "Final answer."}]}}
-                ]
-            }
-        )
-
-        with patch("app.llm_providers.gemini_provider.httpx.post") as mock_post:
-            mock_post.return_value = response
-            provider.chat(
-                model_id="gemma-4-31b-it",
-                user_prompt="Hello",
-                extra={
-                    "_gateway_trace_id": "trace-123",
-                    "candidateCount": 1,
-                },
-            )
-
-        payload = mock_post.call_args.kwargs["json"]
-        assert "_gateway_trace_id" not in payload
-        assert payload["candidateCount"] == 1
-
-    def test_gemini_retries_transient_http_errors(self):
-        provider = GeminiProvider(api_key="test-key")
-        request = httpx.Request("POST", "https://generativelanguage.googleapis.com")
-        transient_response = httpx.Response(
-            500,
-            request=request,
-            json={"error": {"message": "Internal error encountered."}},
-        )
-        success_response = FakeLLMResponse(
-            {
-                "candidates": [
-                    {"content": {"parts": [{"text": "Recovered response."}]}}
-                ]
-            }
-        )
-
-        with patch("app.llm_providers.gemini_provider.time.sleep") as mock_sleep:
-            with patch("app.llm_providers.gemini_provider.httpx.post") as mock_post:
-                mock_post.side_effect = [
-                    httpx.HTTPStatusError(
-                        "internal error", request=request, response=transient_response
-                    ),
-                    success_response,
-                ]
-                result = provider.chat(model_id="gemini-test", user_prompt="Hello")
-
-        assert result["content"] == "Recovered response."
-        assert mock_post.call_count == 2
-        mock_sleep.assert_called_once()
 
 
 class TestExecuteChat:

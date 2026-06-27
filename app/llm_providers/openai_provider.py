@@ -20,17 +20,6 @@ logger = get_logger(__name__)
 _TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 
 
-def _sanitize_extra_payload(extra: Optional[dict]) -> dict:
-    """Drop internal gateway metadata before forwarding provider extras."""
-    if not extra:
-        return {}
-    return {
-        key: value
-        for key, value in extra.items()
-        if not str(key).startswith("_gateway_")
-    }
-
-
 class OpenAIProvider(LLMProviderBase):
     def __init__(self, api_key: str, base_url: str = "https://api.openai.com/v1"):
         self.api_key = api_key
@@ -93,7 +82,7 @@ class OpenAIProvider(LLMProviderBase):
             payload["top_p"] = top_p
         # Merge any extra provider-specific params
         if extra:
-            payload.update(_sanitize_extra_payload(extra))
+            payload.update(extra)
         self._apply_thinking_options(payload, include_thinking, model_id)
 
         headers = {

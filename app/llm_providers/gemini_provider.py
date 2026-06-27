@@ -5,7 +5,6 @@ Supports text and vision (image) inputs.
 """
 
 import httpx
-import time
 from typing import Optional
 
 from app.llm_providers import LLMProviderBase
@@ -15,28 +14,6 @@ from app.utils.logging_utils import get_logger
 logger = get_logger(__name__)
 
 _TIMEOUT = httpx.Timeout(120.0, connect=10.0)
-_RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
-_MAX_RETRIES = 2
-_RETRY_BACKOFF_SECONDS = 0.5
-
-
-def _key_fingerprint(api_key: str) -> str:
-    if not api_key:
-        return "none"
-    if len(api_key) <= 8:
-        return f"{api_key[:2]}***"
-    return f"{api_key[:4]}***{api_key[-4:]}"
-
-
-def _sanitize_extra_payload(extra: Optional[dict]) -> dict:
-    """Drop internal gateway metadata before forwarding provider extras."""
-    if not extra:
-        return {}
-    return {
-        key: value
-        for key, value in extra.items()
-        if not str(key).startswith("_gateway_")
-    }
 
 
 class GeminiProvider(LLMProviderBase):
@@ -97,7 +74,7 @@ class GeminiProvider(LLMProviderBase):
         if top_p is not None:
             generation_config["topP"] = top_p
 
-        extra_payload = _sanitize_extra_payload(extra)
+        extra_payload = dict(extra or {})
         extra_generation_config = extra_payload.pop(
             "generationConfig", extra_payload.pop("generation_config", None)
         )
@@ -111,9 +88,6 @@ class GeminiProvider(LLMProviderBase):
         )
         if include_thinking:
             thinking_config["includeThoughts"] = True
-            # Gemma 4 docs require thinking to be enabled via thinkingLevel.
-            if model_id.startswith("gemma-4-"):
-                thinking_config.setdefault("thinkingLevel", "high")
         elif "includeThoughts" in thinking_config:
             thinking_config["includeThoughts"] = False
         if thinking_config:
@@ -126,90 +100,17 @@ class GeminiProvider(LLMProviderBase):
 
         url = f"{self.base_url}/v1beta/models/{model_id}:generateContent"
         params = {"key": self.api_key}
-        trace_id = None
-        if extra:
-            trace_id = extra.get("_gateway_trace_id")
-        key_fingerprint = _key_fingerprint(self.api_key)
 
-        logger.info(
-            "Gemini request starting: "
-            f"trace_id={trace_id}, model={model_id}, "
-            f"provider_key={key_fingerprint}, url={url}, "
-            f"internal_retries={_MAX_RETRIES + 1}"
+        logger.info(f"Gemini request: model={model_id}")
+
+        resp = httpx.post(
+            url,
+            json=payload,
+            params=params,
+            timeout=_TIMEOUT,
         )
-
-        last_exc: Exception | None = None
-        for attempt in range(_MAX_RETRIES + 1):
-            try:
-                logger.info(
-                    "Gemini HTTP attempt: "
-                    f"trace_id={trace_id}, model={model_id}, "
-                    f"provider_key={key_fingerprint}, "
-                    f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
-                    "scope=same_provider_key_retry"
-                )
-                resp = httpx.post(
-                    url,
-                    json=payload,
-                    params=params,
-                    timeout=_TIMEOUT,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                logger.info(
-                    "Gemini HTTP attempt succeeded: "
-                    f"trace_id={trace_id}, model={model_id}, "
-                    f"provider_key={key_fingerprint}, "
-                    f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
-                    "scope=same_provider_key_retry"
-                )
-                break
-            except httpx.HTTPStatusError as exc:
-                last_exc = exc
-                status_code = exc.response.status_code
-                if (
-                    status_code not in _RETRYABLE_STATUS_CODES
-                    or attempt >= _MAX_RETRIES
-                ):
-                    logger.warning(
-                        "Gemini HTTP attempt failed without further same-key retries: "
-                        f"trace_id={trace_id}, model={model_id}, "
-                        f"provider_key={key_fingerprint}, status={status_code}, "
-                        f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
-                        "scope=same_provider_key_retry"
-                    )
-                    raise
-                logger.warning(
-                    "Gemini transient HTTP error, retrying same provider key: "
-                    f"trace_id={trace_id}, model={model_id}, "
-                    f"provider_key={key_fingerprint}, status={status_code}, "
-                    f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
-                    "scope=same_provider_key_retry"
-                )
-            except httpx.RequestError as exc:
-                last_exc = exc
-                if attempt >= _MAX_RETRIES:
-                    logger.warning(
-                        "Gemini transport error failed without further same-key retries: "
-                        f"trace_id={trace_id}, model={model_id}, "
-                        f"provider_key={key_fingerprint}, "
-                        f"error={exc.__class__.__name__}, "
-                        f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
-                        "scope=same_provider_key_retry"
-                    )
-                    raise
-                logger.warning(
-                    "Gemini transport error, retrying same provider key: "
-                    f"trace_id={trace_id}, model={model_id}, "
-                    f"provider_key={key_fingerprint}, "
-                    f"error={exc.__class__.__name__}, "
-                    f"http_attempt={attempt + 1}/{_MAX_RETRIES + 1}, "
-                    "scope=same_provider_key_retry"
-                )
-
-            time.sleep(_RETRY_BACKOFF_SECONDS * (2**attempt))
-        else:
-            raise last_exc or RuntimeError("Gemini request failed without exception")
+        resp.raise_for_status()
+        data = resp.json()
 
         # Parse the response
         candidates = data.get("candidates", [])
